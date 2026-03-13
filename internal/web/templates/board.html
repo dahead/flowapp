@@ -1,0 +1,174 @@
+{{define "board.html"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>FlowApp</title>
+<script>
+// Apply theme before paint to avoid flash
+(function(){
+  const t = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  document.documentElement.setAttribute('data-theme', t);
+})();
+</script>
+<style>
+:root {
+  --bg: #f0f2f5; --bg2: #ffffff; --bg3: #f8f9fb;
+  --border: #e4e6ef; --border2: #e0e0e0;
+  --text: #1a1a2e; --text2: #666; --text3: #aaa;
+  --header-bg: #1a1a2e; --header-input-bg: #2a2a40; --header-input-border: #3a3a55;
+  --accent: #6c63ff; --accent2: #574fd6;
+  --card-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  --card-shadow-hover: 0 4px 16px rgba(0,0,0,0.12);
+  --chip-label-bg: #f0eeff; --chip-label-color: #6c63ff;
+  --progress-bg: #f0f0f0;
+}
+[data-theme="dark"] {
+  --bg: #0f0f17; --bg2: #1a1a2e; --bg3: #22223a;
+  --border: #2e2e4a; --border2: #2e2e4a;
+  --text: #e8e8f0; --text2: #9090b0; --text3: #5a5a7a;
+  --header-bg: #111120; --header-input-bg: #1e1e34; --header-input-border: #3a3a55;
+  --accent: #7c73ff; --accent2: #6c63ff;
+  --card-shadow: 0 1px 4px rgba(0,0,0,0.4);
+  --card-shadow-hover: 0 4px 16px rgba(0,0,0,0.5);
+  --chip-label-bg: #2a2545; --chip-label-color: #9d96ff;
+  --progress-bg: #2a2a40;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+header { background: var(--header-bg); color: white; padding: 0.85rem 2rem; display: flex; align-items: center; gap: 1.5rem; flex-wrap: wrap; }
+header h1 { font-size: 1.2rem; font-weight: 800; }
+header h1 span { color: var(--accent); }
+header a.builder-link { color: var(--accent); text-decoration: none; font-size: 0.88rem; background: var(--header-input-bg); padding: 0.38rem 0.9rem; border-radius: 6px; white-space: nowrap; }
+.theme-btn { background: var(--header-input-bg); border: 1px solid var(--header-input-border); color: var(--text3); border-radius: 6px; padding: 0.35rem 0.7rem; cursor: pointer; font-size: 0.88rem; }
+.theme-btn:hover { color: white; }
+.new-form { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-left: auto; }
+.new-form select, .new-form input { background: var(--header-input-bg); border: 1px solid var(--header-input-border); color: white; border-radius: 7px; padding: 0.38rem 0.75rem; font-size: 0.88rem; outline: none; }
+.new-form select option { background: #1a1a2e; }
+.new-form button { background: var(--accent); color: white; border: none; border-radius: 7px; padding: 0.38rem 1.1rem; cursor: pointer; font-size: 0.88rem; font-weight: 600; }
+.new-form button:hover { background: var(--accent2); }
+.filter-bar { background: var(--bg2); padding: 0.6rem 2rem; display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; border-bottom: 1px solid var(--border); }
+.filter-bar form { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; flex: 1; }
+.filter-bar input[type=text] { border: 1.5px solid var(--border); border-radius: 7px; padding: 0.3rem 0.75rem; font-size: 0.85rem; outline: none; background: var(--bg3); color: var(--text); min-width: 180px; }
+.filter-bar input[type=text]:focus { border-color: var(--accent); }
+.chip { display: inline-block; padding: 0.2rem 0.65rem; border-radius: 20px; font-size: 0.75rem; font-weight: 600; cursor: pointer; border: 1.5px solid transparent; text-decoration: none; transition: all 0.15s; }
+.chip.priority-high   { background: #fee2e2; color: #dc2626; }
+.chip.priority-medium { background: #fef3c7; color: #d97706; }
+.chip.priority-low    { background: #f1f5f9; color: #64748b; }
+[data-theme="dark"] .chip.priority-high   { background: #3a1515; color: #f87171; }
+[data-theme="dark"] .chip.priority-medium { background: #3a2e10; color: #fbbf24; }
+[data-theme="dark"] .chip.priority-low    { background: #1e2535; color: #94a3b8; }
+.chip.label-chip { background: var(--chip-label-bg); color: var(--chip-label-color); }
+.chip.active { border-color: currentColor; }
+.chip-clear { font-size: 0.8rem; color: var(--text3); text-decoration: none; padding: 0.2rem 0.4rem; }
+.chip-clear:hover { color: var(--text); }
+.board { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; padding: 2rem; align-items: start; }
+.column-title { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text3); margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.5rem; }
+.col-count { background: var(--bg3); border-radius: 10px; padding: 1px 8px; font-size: 0.72rem; color: var(--text2); border: 1px solid var(--border); }
+.card { background: var(--bg2); border-radius: 12px; box-shadow: var(--card-shadow); padding: 1rem 1rem 1rem 1.1rem; margin-bottom: 0.85rem; cursor: pointer; transition: box-shadow 0.15s; border-left: 4px solid transparent; }
+.card:hover { box-shadow: var(--card-shadow-hover); }
+.card.high   { border-left-color: #dc2626; }
+.card.medium { border-left-color: #d97706; }
+.card.low    { border-left-color: #94a3b8; }
+.card.done-card { opacity: 0.6; }
+.card-title { font-size: 0.95rem; font-weight: 600; margin-bottom: 0.3rem; color: var(--text); }
+.card-wf    { font-size: 0.75rem; color: var(--text3); margin-bottom: 0.5rem; }
+.card-labels { display: flex; gap: 0.3rem; flex-wrap: wrap; margin-bottom: 0.5rem; }
+.card-label { font-size: 0.68rem; background: var(--chip-label-bg); color: var(--chip-label-color); border-radius: 10px; padding: 1px 7px; }
+.progress-bar { background: var(--progress-bg); border-radius: 4px; height: 5px; overflow: hidden; margin-bottom: 0.4rem; }
+.progress-fill { background: var(--accent); height: 100%; border-radius: 4px; }
+.progress-fill.done { background: #22c55e; }
+.card-meta { display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; color: var(--text3); }
+.overdue-badge { background: #fee2e2; color: #dc2626; font-size: 0.68rem; font-weight: 700; border-radius: 6px; padding: 1px 6px; }
+[data-theme="dark"] .overdue-badge { background: #3a1515; color: #f87171; }
+.priority-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+.priority-dot.high   { background: #dc2626; }
+.priority-dot.medium { background: #d97706; }
+.priority-dot.low    { background: #94a3b8; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Flow<span>App</span></h1>
+  <a href="/builder" class="builder-link">⚙ Builder</a>
+  <button class="theme-btn" onclick="toggleTheme()">◐</button>
+  <form class="new-form" method="POST" action="/instance">
+    <select name="workflow" required>
+      <option value="" disabled selected>Workflow…</option>
+      {{range .Definitions}}<option value="{{.}}">{{.}}</option>{{end}}
+    </select>
+    <input type="text" name="title" placeholder="Instance title…">
+    <select name="priority">
+      <option value="">Priority…</option>
+      <option value="low">Low</option>
+      <option value="medium">Medium</option>
+      <option value="high">High</option>
+    </select>
+    <button type="submit">+ New</button>
+  </form>
+</header>
+
+<div class="filter-bar">
+  <form method="GET" action="/">
+    <input type="text" name="q" value="{{.FilterQ}}" placeholder="Search…">
+    {{range $p := (iterate 3)}}
+      {{$priority := index (slice "high" "medium" "low") $p}}
+      <a href="?priority={{$priority}}{{if $.FilterLabel}}&label={{$.FilterLabel}}{{end}}{{if $.FilterQ}}&q={{$.FilterQ}}{{end}}"
+         class="chip priority-{{$priority}}{{if eq $.FilterPriority $priority}} active{{end}}">
+        {{$priority}}
+      </a>
+    {{end}}
+    {{range .AllLabels}}
+    <a href="?label={{.}}{{if $.FilterPriority}}&priority={{$.FilterPriority}}{{end}}{{if $.FilterQ}}&q={{$.FilterQ}}{{end}}"
+       class="chip label-chip{{if eq $.FilterLabel .}} active{{end}}">
+      {{.}}
+    </a>
+    {{end}}
+    {{if or .FilterQ .FilterPriority .FilterLabel}}
+    <a href="/" class="chip-clear">✕ clear</a>
+    {{end}}
+  </form>
+</div>
+
+<div class="board">
+  {{range .Columns}}
+  <div class="column">
+    <div class="column-title">
+      {{.Title}} <span class="col-count">{{len .Cards}}</span>
+    </div>
+    {{range .Cards}}
+    <div class="card {{.Priority}}{{if .IsDone}} done-card{{end}}" onclick="location='/instance/{{.ID}}'">
+      <div class="card-title">{{.Title}}</div>
+      <div class="card-wf">{{.WorkflowName}}</div>
+      {{if .Labels}}
+      <div class="card-labels">
+        {{range .Labels}}<span class="card-label">{{.}}</span>{{end}}
+      </div>
+      {{end}}
+      <div class="progress-bar">
+        <div class="progress-fill{{if .IsDone}} done{{end}}" style="width:{{.Pct}}%"></div>
+      </div>
+      <div class="card-meta">
+        <span>{{.Done}}/{{.Total}}</span>
+        <span style="display:flex;align-items:center;gap:0.4rem;">
+          {{if .HasOverdue}}<span class="overdue-badge">overdue</span>{{end}}
+          <span class="priority-dot {{.Priority}}"></span>
+        </span>
+      </div>
+    </div>
+    {{end}}
+  </div>
+  {{end}}
+</div>
+
+<script>
+function toggleTheme() {
+  const html = document.documentElement;
+  const next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+  html.setAttribute('data-theme', next);
+  localStorage.setItem('theme', next);
+}
+</script>
+</body>
+</html>
+{{end}}

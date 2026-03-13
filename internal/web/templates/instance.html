@@ -1,0 +1,319 @@
+{{define "instance.html"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>{{.Title}} — FlowApp</title>
+<script>
+(function(){
+  const t = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  document.documentElement.setAttribute('data-theme', t);
+})();
+</script>
+<style>
+:root {
+  --bg: #f0f2f5; --bg2: #ffffff; --bg3: #fafafa; --bg4: #f4f4f8;
+  --border: #e4e6ef; --border2: #f4f4f4;
+  --text: #1a1a2e; --text2: #555; --text3: #888; --text4: #bbb;
+  --header-bg: #1a1a2e; --header-input-bg: #2a2a40;
+  --accent: #6c63ff; --accent2: #574fd6;
+  --green: #22c55e; --red: #ef4444; --amber: #f59e0b; --blue: #3b82f6;
+  --shadow: 0 1px 4px rgba(0,0,0,0.08);
+  --note-border: #e0e0e0; --note-bg: #fafafa;
+  --check-hover: #f4f4f8;
+}
+[data-theme="dark"] {
+  --bg: #0f0f17; --bg2: #1a1a2e; --bg3: #1e1e32; --bg4: #22223a;
+  --border: #2e2e4a; --border2: #252538;
+  --text: #e8e8f0; --text2: #a0a0c0; --text3: #6a6a8a; --text4: #3a3a5a;
+  --header-bg: #111120; --header-input-bg: #1e1e34;
+  --accent: #7c73ff; --accent2: #6c63ff;
+  --green: #16a34a; --red: #dc2626; --amber: #d97706; --blue: #2563eb;
+  --shadow: 0 1px 4px rgba(0,0,0,0.4);
+  --note-border: #2e2e4a; --note-bg: #1e1e32;
+  --check-hover: #22223a;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); }
+header { background: var(--header-bg); color: white; padding: 1rem 2rem; display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+header a { color: var(--accent); text-decoration: none; font-size: 0.88rem; }
+header h2 { font-size: 1.2rem; flex: 1; }
+.wf-badge { background: var(--header-input-bg); border-radius: 6px; padding: 2px 10px; font-size: 0.8rem; color: #aaa; }
+.priority-badge { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; padding: 2px 8px; border-radius: 8px; }
+.priority-badge.high   { background: #fee2e2; color: #dc2626; }
+.priority-badge.medium { background: #fef3c7; color: #d97706; }
+.priority-badge.low    { background: #f1f5f9; color: #64748b; }
+[data-theme="dark"] .priority-badge.high   { background: #3a1515; color: #f87171; }
+[data-theme="dark"] .priority-badge.medium { background: #3a2e10; color: #fbbf24; }
+[data-theme="dark"] .priority-badge.low    { background: #1e2535; color: #94a3b8; }
+.theme-btn { background: var(--header-input-bg); border: 1px solid #3a3a55; color: #aaa; border-radius: 6px; padding: 0.3rem 0.65rem; cursor: pointer; font-size: 0.85rem; }
+.theme-btn:hover { color: white; }
+.content { padding: 2rem; max-width: 980px; margin: 0 auto; display: grid; grid-template-columns: 1fr 280px; gap: 2rem; align-items: start; }
+.sections { display: flex; flex-direction: column; gap: 1.5rem; }
+.section { background: var(--bg2); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); border: 1px solid var(--border); }
+.section-header { background: var(--header-bg); color: white; padding: 0.6rem 1.2rem; font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; }
+.step { display: flex; align-items: flex-start; gap: 0.85rem; padding: 0.75rem 1.2rem; border-bottom: 1px solid var(--border2); }
+.step:last-child { border-bottom: none; }
+.step.overdue { background: rgba(239,68,68,0.05); }
+.step.skipped { opacity: 0.4; }
+.step-icon { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.75rem; flex-shrink: 0; margin-top: 2px; font-weight: 700; }
+.step-icon.done    { background: #22c55e; color: white; }
+.step-icon.ended   { background: #22c55e; color: white; }
+.step-icon.ready   { background: var(--accent); color: white; }
+.step-icon.pending { background: var(--bg4); color: var(--text3); border: 1.5px solid var(--border); }
+.step-icon.ask     { background: var(--blue); color: white; }
+.step-icon.gate    { background: var(--amber); color: white; }
+.step-icon.skipped { background: var(--bg4); color: var(--text4); }
+.step-body { flex: 1; min-width: 0; }
+.step-name { font-size: 0.95rem; line-height: 1.4; font-weight: 500; color: var(--text); }
+.step-name.done, .step-name.ended { text-decoration: line-through; color: var(--text4); }
+.step-name.skipped { text-decoration: line-through; color: var(--text4); font-style: italic; }
+.step-name.pending { color: var(--text2); }
+.step-note   { font-size: 0.8rem; color: var(--text3); margin-top: 0.25rem; padding: 0.3rem 0.6rem; background: var(--note-bg); border-left: 3px solid var(--note-border); border-radius: 0 4px 4px 0; }
+.step-notify { font-size: 0.75rem; color: var(--accent); margin-top: 0.2rem; }
+.step-needs  { font-size: 0.72rem; color: var(--text3); margin-top: 0.2rem; }
+.step-due    { font-size: 0.75rem; margin-top: 0.25rem; color: var(--text3); }
+.step-due.overdue { color: #ef4444; font-weight: 600; }
+.step-gate-info { font-size: 0.78rem; color: var(--amber); margin-top: 0.3rem; }
+.step-gate-info a { color: var(--amber); font-weight: 600; }
+.step-actions { display: flex; gap: 0.5rem; margin-top: 0.5rem; flex-wrap: wrap; align-items: center; }
+.ask-question { font-size: 0.88rem; font-weight: 600; color: var(--blue); margin-bottom: 0.4rem; }
+.btn { padding: 0.32rem 0.9rem; border: none; border-radius: 6px; cursor: pointer; font-size: 0.82rem; font-weight: 600; }
+.btn-complete { background: var(--accent); color: white; }
+.btn-complete:hover { background: var(--accent2); }
+.btn-complete:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-ask { background: var(--blue); color: white; }
+.btn-ask:hover { opacity: 0.85; }
+.list-blocked-hint { font-size: 0.75rem; color: var(--amber); }
+.done-banner { background: #dcfce7; color: #15803d; border-radius: 10px; padding: 1rem 1.5rem; margin-bottom: 1.5rem; font-weight: 600; }
+[data-theme="dark"] .done-banner { background: #0f2a1a; color: #4ade80; }
+/* checklist */
+.checklist { margin-top: 0.5rem; }
+.checklist-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem; }
+.check-form { display: block; }
+.check-btn { display: flex; align-items: center; gap: 0.5rem; background: none; border: none; cursor: pointer; padding: 0.25rem 0.4rem; border-radius: 6px; width: 100%; text-align: left; font-size: 0.88rem; }
+.check-btn:hover { background: var(--check-hover); }
+.check-icon { width: 16px; text-align: center; font-size: 0.85rem; color: var(--text4); flex-shrink: 0; }
+.check-btn.checked .check-icon { color: #22c55e; }
+.check-text { color: var(--text); }
+.check-text.checked { text-decoration: line-through; color: var(--text4); }
+.optional-tag { font-size: 0.68rem; background: var(--bg4); color: var(--text3); border-radius: 4px; padding: 0 4px; margin-left: 0.3rem; }
+.add-item-form { display: flex; gap: 0.4rem; margin-top: 0.5rem; padding-top: 0.4rem; border-top: 1px dashed var(--border); }
+.add-item-form input { flex: 1; border: 1px solid var(--border); border-radius: 6px; padding: 0.25rem 0.6rem; font-size: 0.82rem; outline: none; background: var(--bg3); color: var(--text); }
+.add-item-form input:focus { border-color: var(--accent); }
+.add-item-form button { padding: 0.25rem 0.7rem; background: var(--bg4); color: var(--accent); border: none; border-radius: 6px; cursor: pointer; font-size: 0.82rem; font-weight: 600; }
+.add-item-form button:hover { background: var(--accent); color: white; }
+/* sidebar */
+.sidebar { display: flex; flex-direction: column; gap: 1.5rem; }
+.sidebar-box { background: var(--bg2); border-radius: 12px; padding: 1.2rem; box-shadow: var(--shadow); border: 1px solid var(--border); }
+.sidebar-box h3 { font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text3); margin-bottom: 1rem; }
+.props-form { display: flex; flex-direction: column; gap: 0.6rem; }
+.props-row { display: flex; flex-direction: column; gap: 0.2rem; }
+.props-row label { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text3); }
+.props-row input, .props-row select { border: 1.5px solid var(--border); border-radius: 7px; padding: 0.38rem 0.6rem; font-size: 0.88rem; font-family: inherit; outline: none; background: var(--bg3); color: var(--text); }
+.props-row input:focus, .props-row select:focus { border-color: var(--accent); }
+.props-meta { font-size: 0.72rem; color: var(--text4); display: flex; flex-direction: column; gap: 0.15rem; margin-top: 0.2rem; }
+.props-save { align-self: flex-end; padding: 0.35rem 1rem; background: var(--accent); color: white; border: none; border-radius: 7px; cursor: pointer; font-size: 0.82rem; font-weight: 600; margin-top: 0.2rem; }
+.props-save:hover { background: var(--accent2); }
+.comment { border-bottom: 1px solid var(--border2); padding: 0.5rem 0; font-size: 0.88rem; color: var(--text); }
+.comment:last-of-type { border-bottom: none; }
+.comment-time { font-size: 0.72rem; color: var(--text4); margin-top: 0.15rem; }
+.comment-form { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.75rem; }
+.comment-form textarea { border: 1px solid var(--border); border-radius: 6px; padding: 0.5rem; font-size: 0.88rem; font-family: inherit; resize: vertical; min-height: 64px; outline: none; background: var(--bg3); color: var(--text); }
+.comment-form textarea:focus { border-color: var(--accent); }
+.comment-form button { align-self: flex-end; padding: 0.3rem 0.9rem; background: var(--accent); color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 0.82rem; }
+.actions { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 2rem; }
+.btn-back  { padding: 0.5rem 1.2rem; background: var(--bg4); border: none; border-radius: 8px; cursor: pointer; font-size: 0.9rem; text-decoration: none; color: var(--text); display: inline-block; }
+.btn-clone { padding: 0.5rem 1.2rem; background: #e0f2fe; color: #0369a1; border: none; border-radius: 8px; cursor: pointer; font-size: 0.9rem; }
+[data-theme="dark"] .btn-clone { background: #0c2233; color: #38bdf8; }
+.btn-clone:hover { background: #0369a1; color: white; }
+.btn-delete { padding: 0.5rem 1.2rem; background: #fee2e2; color: #dc2626; border: none; border-radius: 8px; cursor: pointer; font-size: 0.9rem; }
+[data-theme="dark"] .btn-delete { background: #2a1010; color: #f87171; }
+.btn-delete:hover { background: #dc2626; color: white; }
+.audit-entry { font-size: 0.82rem; border-bottom: 1px solid var(--border2); padding-bottom: 0.35rem; margin-bottom: 0.35rem; }
+.audit-entry:last-child { border-bottom: none; }
+@media(max-width: 700px) { .content { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <a href="/">← Board</a>
+  <h2>{{.Title}}</h2>
+  <span class="wf-badge">{{.WorkflowName}}</span>
+  <span class="priority-badge {{.Priority}}">{{.Priority}}</span>
+  <button class="theme-btn" onclick="toggleTheme()">◐</button>
+</header>
+
+<div class="content">
+  <div>
+    {{if eq (print .Status) "done"}}
+    <div class="done-banner">✓ Workflow complete!</div>
+    {{end}}
+
+    <div class="sections">
+      {{$id := .ID}}
+      {{range .Sections}}
+      <div class="section">
+        <div class="section-header">{{.Name}}</div>
+        {{range .Steps}}
+        {{$step := .}}
+        <div class="step{{if isOverdue .}} overdue{{end}}{{if isSkipped .}} skipped{{end}}">
+          <div class="step-icon {{.Status}}">{{statusIcon .}}</div>
+          <div class="step-body">
+            <div class="step-name {{.Status}}">{{.Name}}</div>
+
+            {{if .Note}}<div class="step-note">📎 {{.Note}}</div>{{end}}
+            {{if .Notify}}<div class="step-notify">📧 {{.Notify}}</div>{{end}}
+            {{if .Needs}}<div class="step-needs">⏳ needs: {{visibleNeeds .Needs}}</div>{{end}}
+
+            {{if .Due}}{{$lbl := dueLabel .}}{{if $lbl}}
+              <div class="step-due{{if isOverdue .}} overdue{{end}}">🕐 {{$lbl}}</div>
+            {{end}}{{end}}
+
+            {{if isGate .}}
+            <div class="step-gate-info">🔑 Waiting for external approval —
+              <a href="/approve/{{.GateToken}}" target="_blank">open approval link</a>
+            </div>
+            {{end}}
+
+            {{if .ListItems}}
+            <div class="checklist">
+              <div class="checklist-header">
+                <span style="font-size:0.75rem;color:var(--text3);">{{len .ListItems}} items</span>
+                <form method="POST" action="/instance/{{$id}}/listitem/checkall">
+                  <input type="hidden" name="step" value="{{$step.Name}}">
+                  <button type="submit" style="font-size:0.72rem;background:var(--bg4);color:#16a34a;border:none;border-radius:5px;padding:2px 8px;cursor:pointer;">✓ all</button>
+                </form>
+              </div>
+              {{range .ListItems}}
+              <form class="check-form" method="POST" action="/instance/{{$id}}/listitem/toggle">
+                <input type="hidden" name="step" value="{{$step.Name}}">
+                <input type="hidden" name="item_id" value="{{.ID}}">
+                <button type="submit" class="check-btn{{if .Checked}} checked{{end}}">
+                  <span class="check-icon">{{if .Checked}}✓{{else}}○{{end}}</span>
+                  <span class="check-text{{if .Checked}} checked{{end}}">
+                    {{.Text}}{{if not .Required}}<span class="optional-tag">optional</span>{{end}}
+                  </span>
+                </button>
+              </form>
+              {{end}}
+              <form class="add-item-form" method="POST" action="/instance/{{$id}}/listitem/add">
+                <input type="hidden" name="step" value="{{$step.Name}}">
+                <input type="text" name="text" placeholder="+ Add item…">
+                <button type="submit">Add</button>
+              </form>
+            </div>
+            {{end}}
+
+            {{if isReady .}}
+            <div class="step-actions">
+              <form method="POST" action="/instance/{{$id}}/step">
+                <input type="hidden" name="step" value="{{.Name}}">
+                <button class="btn btn-complete" type="submit"
+                  {{if requiredListBlocked .}}disabled title="Check required items first"{{end}}>
+                  Complete
+                </button>
+              </form>
+              {{if requiredListBlocked .}}<span class="list-blocked-hint">⚠ Check required items first</span>{{end}}
+            </div>
+            {{end}}
+
+            {{if isAsk .}}
+            <div class="step-actions" style="flex-direction:column;align-items:flex-start;">
+              <div class="ask-question">{{.Ask.Question}}</div>
+              <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+                {{range $i, $target := .Ask.Targets}}
+                <form method="POST" action="/instance/{{$id}}/ask">
+                  <input type="hidden" name="step" value="{{$step.Name}}">
+                  <input type="hidden" name="choice" value="{{$i}}">
+                  <button class="btn btn-ask" type="submit">{{$target}}</button>
+                </form>
+                {{end}}
+              </div>
+            </div>
+            {{end}}
+
+          </div>
+        </div>
+        {{end}}
+      </div>
+      {{end}}
+    </div>
+
+    <div class="actions">
+      <a class="btn-back" href="/">← Board</a>
+      <form method="POST" action="/instance/{{.ID}}/clone">
+        <button class="btn-clone" type="submit">⎘ Clone</button>
+      </form>
+      <form method="POST" action="/instance/{{.ID}}/delete" onsubmit="return confirm('Delete instance?')">
+        <button class="btn-delete" type="submit">Delete</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="sidebar">
+    <div class="sidebar-box">
+      <h3>Properties</h3>
+      <form method="POST" action="/instance/{{.ID}}/edit" class="props-form">
+        <div class="props-row"><label>Name</label>
+          <input type="text" name="title" value="{{.Title}}"></div>
+        <div class="props-row"><label>Priority</label>
+          <select name="priority">
+            <option value="low"   {{if eq .Priority "low"}}selected{{end}}>Low</option>
+            <option value="medium"{{if eq .Priority "medium"}}selected{{end}}>Medium</option>
+            <option value="high"  {{if eq .Priority "high"}}selected{{end}}>High</option>
+          </select></div>
+        <div class="props-row"><label>Labels</label>
+          <input type="text" name="labels" value="{{join .Labels ", "}}" placeholder="finance, hr"></div>
+        <div class="props-meta">
+          <span>Created: {{.CreatedAt.Format "02.01.2006 15:04"}}</span>
+          <span>Modified: {{.UpdatedAt.Format "02.01.2006 15:04"}}</span>
+        </div>
+        <button type="submit" class="props-save">Save</button>
+      </form>
+    </div>
+
+    <div class="sidebar-box">
+      <h3>Audit Log</h3>
+      {{if eq (len .Audit) 0}}<div style="font-size:0.85rem;color:var(--text3);">No actions yet.</div>
+      {{else}}
+      {{range .Audit}}
+      <div class="audit-entry">
+        <span style="font-weight:600;">
+          {{if eq .Action "complete"}}✓{{else if eq .Action "ask"}}💬{{else if eq .Action "gate"}}🔑{{end}}
+          {{.Step}}</span>
+        {{if .Note}}<div style="font-size:0.75rem;color:var(--text3);">{{.Note}}</div>{{end}}
+        <div style="font-size:0.72rem;color:var(--text4);">{{.At.Format "02.01.2006 15:04"}}</div>
+      </div>
+      {{end}}
+      {{end}}
+    </div>
+
+    <div class="sidebar-box">
+      <h3>Comments</h3>
+      {{if eq (len .Comments) 0}}<div style="font-size:0.85rem;color:var(--text3);">No comments yet.</div>{{end}}
+      {{range .Comments}}
+      <div class="comment">
+        <div>{{.Text}}</div>
+        <div class="comment-time">{{.CreatedAt.Format "02.01.2006 15:04"}}</div>
+      </div>
+      {{end}}
+      <form class="comment-form" method="POST" action="/instance/{{.ID}}/comment">
+        <textarea name="text" placeholder="Add a comment…"></textarea>
+        <button type="submit">Send</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+function toggleTheme() {
+  const html = document.documentElement;
+  const next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+  html.setAttribute('data-theme', next);
+  localStorage.setItem('theme', next);
+}
+</script>
+</body>
+</html>
+{{end}}

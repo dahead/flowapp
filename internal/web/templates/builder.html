@@ -1,0 +1,367 @@
+{{define "builder.html"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Workflow Builder — FlowApp</title>
+<script>
+(function(){
+  const t = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  document.documentElement.setAttribute('data-theme', t);
+})();
+</script>
+<style>
+:root {
+  --bg: #f0f2f5; --bg2: #ffffff; --bg3: #f8f9fb; --bg4: #f0eeff;
+  --border: #e4e6ef; --text: #1a1a2e; --text2: #666; --text3: #aaa;
+  --header-bg: #1a1a2e; --inp-bg: #2a2a40; --inp-border: #3a3a55;
+  --accent: #6c63ff; --accent2: #574fd6;
+  --node-border: #e4e6ef; --node-bg: #ffffff;
+  --dz-hover: #ede9fe; --dz-border: #6c63ff;
+  --palette-bg: #ffffff; --palette-border: #e0e0e0;
+  --sep-color: #ccc; --preview-bg: #1a1a2e;
+}
+[data-theme="dark"] {
+  --bg: #0f0f17; --bg2: #1a1a2e; --bg3: #1e1e32; --bg4: #2a2545;
+  --border: #2e2e4a; --text: #e8e8f0; --text2: #9090b0; --text3: #5a5a7a;
+  --header-bg: #111120; --inp-bg: #1e1e34; --inp-border: #3a3a55;
+  --accent: #7c73ff; --accent2: #6c63ff;
+  --node-border: #2e2e4a; --node-bg: #1a1a2e;
+  --dz-hover: #1e1a38; --dz-border: #7c73ff;
+  --palette-bg: #161628; --palette-border: #2e2e4a;
+  --sep-color: #3a3a5a; --preview-bg: #0a0a12;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+header { background: var(--header-bg); color: white; padding: 0.75rem 1.5rem; display: flex; align-items: center; gap: 1rem; flex-shrink: 0; }
+header a { color: var(--accent); text-decoration: none; font-size: 0.88rem; }
+header h1 { font-size: 1.1rem; }
+header h1 span { color: var(--accent); }
+.hf { display: flex; gap: 0.6rem; align-items: center; flex: 1; margin-left: 1rem; flex-wrap: wrap; }
+.hg { display: flex; flex-direction: column; gap: 0.2rem; }
+.hg label { font-size: 0.68rem; color: #888; text-transform: uppercase; letter-spacing: 0.05em; }
+.hg input, .hg select { background: var(--inp-bg); border: 1px solid var(--inp-border); color: white; border-radius: 6px; padding: 0.3rem 0.65rem; font-size: 0.88rem; outline: none; }
+.hg input:focus, .hg select:focus { border-color: var(--accent); }
+.hg input::placeholder { color: #555; }
+.btn-dl  { padding: 0.38rem 1.1rem; background: var(--accent); color: white; border: none; border-radius: 7px; cursor: pointer; font-size: 0.88rem; font-weight: 600; white-space: nowrap; }
+.btn-dl:hover { background: var(--accent2); }
+.btn-pre { padding: 0.38rem 0.9rem; background: var(--inp-bg); color: #aaa; border: 1px solid var(--inp-border); border-radius: 7px; cursor: pointer; font-size: 0.88rem; }
+.btn-pre:hover { color: white; }
+.theme-btn { padding: 0.35rem 0.7rem; background: var(--inp-bg); color: #aaa; border: 1px solid var(--inp-border); border-radius: 6px; cursor: pointer; font-size: 0.88rem; }
+.theme-btn:hover { color: white; }
+.main { display: flex; flex: 1; overflow: hidden; }
+/* palette */
+.palette { width: 210px; min-width: 210px; background: var(--palette-bg); border-left: 1px solid var(--palette-border); padding: 1rem; overflow-y: auto; flex-shrink: 0; }
+.palette h2 { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text3); margin-bottom: 0.6rem; }
+.pi { background: var(--bg3); border: 1.5px solid var(--node-border); border-radius: 8px; padding: 0.45rem 0.7rem; margin-bottom: 0.4rem; cursor: grab; user-select: none; font-size: 0.84rem; display: flex; align-items: center; gap: 0.45rem; transition: border-color 0.12s; }
+.pi:hover { border-color: var(--accent); }
+.pi .ico { font-size: 0.9rem; width: 18px; text-align: center; }
+.pi .lbl { font-weight: 600; color: var(--text); }
+.pi .dsc { font-size: 0.7rem; color: var(--text3); }
+.sep { font-size: 0.65rem; color: var(--sep-color); text-transform: uppercase; letter-spacing: 0.07em; margin: 0.65rem 0 0.35rem; }
+/* canvas */
+.canvas-wrap { flex: 1; overflow-y: auto; padding: 1.5rem; }
+.canvas { max-width: 680px; margin: 0 auto; }
+.empty { border: 2px dashed var(--border); border-radius: 12px; padding: 3rem; text-align: center; color: var(--text3); font-size: 0.9rem; }
+.empty span { display: block; font-size: 2rem; margin-bottom: 0.5rem; }
+.drop-zone { height: 6px; border-radius: 3px; background: transparent; margin: 2px 0; transition: all 0.12s; }
+.drop-zone.drag-over { height: 22px; background: var(--dz-hover); border: 2px dashed var(--dz-border); border-radius: 6px; }
+/* nodes */
+.node { background: var(--node-bg); border-radius: 10px; border: 1.5px solid var(--node-border); margin-bottom: 3px; }
+.node.n-section { border-color: var(--accent); border-width: 2px; }
+.nh { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.7rem; }
+.handle { color: var(--text3); cursor: grab; font-size: 0.85rem; flex-shrink: 0; }
+.nicon { font-size: 0.85rem; width: 18px; text-align: center; flex-shrink: 0; }
+.ntype { font-size: 0.62rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; width: 48px; flex-shrink: 0; }
+.ntype.t-section { color: var(--accent); }
+.ntype.t-step    { color: #6c63ff; }
+.ntype.t-note    { color: #f59e0b; }
+.ntype.t-due     { color: #f97316; }
+.ntype.t-notify  { color: #6366f1; }
+.ntype.t-needs   { color: #3b82f6; }
+.ntype.t-list    { color: #14b8a6; }
+.ntype.t-ask     { color: #06b6d4; }
+.ntype.t-gate    { color: #f59e0b; }
+.ntype.t-ends    { color: #ef4444; }
+.ni { flex: 1; border: none; outline: none; font-size: 0.87rem; font-family: inherit; background: transparent; color: var(--text); min-width: 0; }
+.ni::placeholder { color: var(--text3); }
+.req-btn { font-size: 0.7rem; color: var(--text3); cursor: pointer; padding: 0.12rem 0.4rem; border-radius: 4px; border: 1px solid var(--border); background: var(--bg3); white-space: nowrap; }
+.req-btn.req { color: #dc2626; border-color: #fca5a5; background: #fff5f5; }
+[data-theme="dark"] .req-btn.req { background: #2a1010; border-color: #7f1d1d; }
+.del-btn { background: none; border: none; color: var(--text3); cursor: pointer; font-size: 0.9rem; padding: 0.1rem 0.3rem; border-radius: 4px; flex-shrink: 0; }
+.del-btn:hover { color: #ef4444; background: #fee2e2; }
+[data-theme="dark"] .del-btn:hover { background: #2a1010; }
+/* gate toggle */
+.gate-btn { font-size: 0.7rem; cursor: pointer; padding: 0.12rem 0.5rem; border-radius: 4px; border: 1px solid var(--border); background: var(--bg3); color: var(--text3); white-space: nowrap; }
+.gate-btn.on { color: #f59e0b; border-color: #f59e0b; background: #fffbeb; }
+[data-theme="dark"] .gate-btn.on { background: #2a1f00; }
+/* preview */
+.preview-wrap { flex-shrink: 0; background: var(--preview-bg); color: #e0e0e0; font-family: monospace; font-size: 0.82rem; max-height: 0; overflow: hidden; transition: max-height 0.3s; border-top: 1px solid #2a2a40; }
+.preview-wrap.open { max-height: 200px; overflow-y: auto; }
+.preview-wrap pre { padding: 1rem 1.5rem; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<header>
+  <a href="/">← Board</a>
+  <h1>Flow<span>App</span> Builder</h1>
+  <div class="hf">
+    <div class="hg"><label>Name</label><input id="wfName" type="text" placeholder="My Workflow" style="width:190px;"></div>
+    <div class="hg"><label>Priority</label>
+      <select id="wfPriority">
+        <option value="low">Low</option>
+        <option value="medium" selected>Medium</option>
+        <option value="high">High</option>
+      </select>
+    </div>
+    <div class="hg"><label>Labels</label><input id="wfLabels" type="text" placeholder="finance, hr" style="width:140px;"></div>
+  </div>
+  <button class="theme-btn" onclick="toggleTheme()">◐</button>
+  <button class="btn-pre" onclick="togglePreview()">{ } Preview</button>
+  <button class="btn-dl"  onclick="download()">⬇ Download</button>
+</header>
+
+<div class="preview-wrap" id="previewWrap"><pre id="previewCode"></pre></div>
+
+<div class="main">
+  <div class="canvas-wrap">
+    <div class="canvas">
+      <div class="empty" id="canvasEmpty"><span>📋</span>Drag elements from the right panel<br>to start building your workflow</div>
+      <div id="nodeList"></div>
+    </div>
+  </div>
+
+  <div class="palette">
+    <h2>Elements</h2>
+    <div class="sep">Structure</div>
+    <div class="pi" data-type="section"><span class="ico">▦</span><div><div class="lbl">section</div><div class="dsc">Group of steps</div></div></div>
+    <div class="pi" data-type="step">   <span class="ico">▶</span><div><div class="lbl">step</div><div class="dsc">Single task</div></div></div>
+    <div class="sep">Modifiers</div>
+    <div class="pi" data-type="note">   <span class="ico">📎</span><div><div class="lbl">note</div><div class="dsc">Hint text</div></div></div>
+    <div class="pi" data-type="due">    <span class="ico">🕐</span><div><div class="lbl">due</div><div class="dsc">e.g. 2d, 1w</div></div></div>
+    <div class="pi" data-type="notify"> <span class="ico">📧</span><div><div class="lbl">notify</div><div class="dsc">Email on complete</div></div></div>
+    <div class="pi" data-type="needs">  <span class="ico">⏳</span><div><div class="lbl">needs</div><div class="dsc">"A", "B" (AND-join)</div></div></div>
+    <div class="pi" data-type="list">   <span class="ico">☑</span><div><div class="lbl">list</div><div class="dsc">Checklist item</div></div></div>
+    <div class="sep">Flow Control</div>
+    <div class="pi" data-type="ask">    <span class="ico">❓</span><div><div class="lbl">ask</div><div class="dsc">"?" -> "A", "B"</div></div></div>
+    <div class="pi" data-type="gate">   <span class="ico">🔑</span><div><div class="lbl">gate</div><div class="dsc">External approval</div></div></div>
+    <div class="pi" data-type="ends">   <span class="ico">⛔</span><div><div class="lbl">ends</div><div class="dsc">Terminal step</div></div></div>
+  </div>
+</div>
+
+<script>
+// ── State ──
+let nodes = [], nodeCounter = 0;
+let dragging = null, dropTarget = null;
+
+const DEF = {
+  section: { ico:'▦', lbl:'section', cls:'t-section n-section', ph:'Section name',       extra:null },
+  step:    { ico:'▶', lbl:'step',    cls:'t-step',              ph:'Step name',           extra:null },
+  note:    { ico:'📎', lbl:'note',   cls:'t-note',              ph:'Note text',           extra:null },
+  due:     { ico:'🕐', lbl:'due',    cls:'t-due',               ph:'2d / 1w / 4h',        extra:null },
+  notify:  { ico:'📧', lbl:'notify', cls:'t-notify',            ph:'email@company.com',   extra:null },
+  needs:   { ico:'⏳', lbl:'needs',  cls:'t-needs',             ph:'"Step A", "Step B"',  extra:null },
+  list:    { ico:'☑',  lbl:'list',   cls:'t-list',              ph:'Item text',           extra:'required' },
+  ask:     { ico:'❓', lbl:'ask',    cls:'t-ask',               ph:'"Question?" -> "Yes Step", "No Step"', extra:null },
+  gate:    { ico:'🔑', lbl:'gate',   cls:'t-gate',              ph:'(no text needed)',    extra:null },
+  ends:    { ico:'⛔', lbl:'ends',   cls:'t-ends',              ph:'(no text needed)',    extra:null },
+};
+
+// ── Drag from palette ──
+document.querySelectorAll('.pi').forEach(el => {
+  el.addEventListener('mousedown', e => {
+    if (e.button !== 0) return;
+    const def = DEF[el.dataset.type];
+    dragging = { source:'palette', type:el.dataset.type, ghost:mkGhost(def.ico+' '+def.lbl, e.clientX, e.clientY) };
+    e.preventDefault();
+  });
+});
+
+document.addEventListener('mousemove', e => {
+  if (!dragging) return;
+  moveGhost(e.clientX, e.clientY);
+  const idx = hitZone(e.clientX, e.clientY);
+  dropTarget = idx;
+  highlightZones(idx);
+});
+
+document.addEventListener('mouseup', e => {
+  if (!dragging) return;
+  rmGhost(); clearZones();
+  if (dropTarget !== null) {
+    const at = dropTarget + 1;
+    if (dragging.source === 'palette') {
+      nodes.splice(at, 0, { id:++nodeCounter, type:dragging.type, value:'', required:true });
+    } else {
+      const si = dragging.nodeIdx;
+      const m = nodes.splice(si, 1)[0];
+      nodes.splice(si < at ? at-1 : at, 0, m);
+    }
+    render();
+  }
+  dragging = null; dropTarget = null;
+});
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && dragging) { rmGhost(); clearZones(); dragging = null; dropTarget = null; }
+});
+
+function mkGhost(label, x, y) {
+  const g = document.createElement('div');
+  g.id = 'dragGhost';
+  g.style.cssText = `position:fixed;pointer-events:none;z-index:9999;background:var(--accent);color:white;
+    padding:5px 12px;border-radius:7px;font-size:0.83rem;font-weight:600;
+    box-shadow:0 4px 16px rgba(108,99,255,0.35);transform:translate(-50%,-50%);left:${x}px;top:${y}px;`;
+  g.textContent = label;
+  document.body.appendChild(g);
+  return g;
+}
+function moveGhost(x,y){ const g=document.getElementById('dragGhost'); if(g){g.style.left=x+'px';g.style.top=y+'px';} }
+function rmGhost(){ const g=document.getElementById('dragGhost'); if(g)g.remove(); }
+function hitZone(x,y){
+  for(const z of document.querySelectorAll('.drop-zone')){
+    const r=z.getBoundingClientRect();
+    if(x>=r.left&&x<=r.right&&y>=r.top-12&&y<=r.bottom+12) return parseInt(z.dataset.after);
+  }
+  return null;
+}
+function highlightZones(idx){ document.querySelectorAll('.drop-zone').forEach(z=>z.classList.toggle('drag-over',parseInt(z.dataset.after)===idx)); }
+function clearZones(){ document.querySelectorAll('.drop-zone').forEach(z=>z.classList.remove('drag-over')); }
+
+// ── Render ──
+function render() {
+  const list = document.getElementById('nodeList');
+  const empty = document.getElementById('canvasEmpty');
+  empty.style.display = nodes.length ? 'none' : 'block';
+  list.innerHTML = '';
+  list.appendChild(mkDZ(-1));
+  nodes.forEach((n,i) => { list.appendChild(mkNode(n,i)); list.appendChild(mkDZ(i)); });
+  updatePreview();
+}
+
+function mkNode(node, idx) {
+  const def = DEF[node.type];
+  const div = document.createElement('div');
+  div.className = 'node' + (node.type === 'section' ? ' n-section' : '');
+
+  const nh = document.createElement('div');
+  nh.className = 'nh';
+
+  const handle = document.createElement('span');
+  handle.className = 'handle'; handle.textContent = '⠿';
+  handle.addEventListener('mousedown', e => {
+    if (e.button !== 0) return;
+    dragging = { source:'node', nodeIdx:idx, ghost:mkGhost(def.ico+' '+(node.value||def.lbl), e.clientX, e.clientY) };
+    e.preventDefault(); e.stopPropagation();
+  });
+
+  const ico = document.createElement('span');
+  ico.className = 'nicon'; ico.textContent = def.ico;
+
+  const lbl = document.createElement('span');
+  lbl.className = 'ntype ' + def.cls.split(' ')[0]; lbl.textContent = def.lbl;
+
+  const inp = document.createElement('input');
+  inp.className = 'ni'; inp.type = 'text';
+  inp.placeholder = def.ph; inp.value = node.value || '';
+  if (node.type === 'gate' || node.type === 'ends') inp.style.display = 'none';
+  inp.addEventListener('input', e => { node.value = e.target.value; updatePreview(); });
+
+  nh.appendChild(handle); nh.appendChild(ico); nh.appendChild(lbl); nh.appendChild(inp);
+
+  if (def.extra === 'required') {
+    const btn = document.createElement('button');
+    btn.className = 'req-btn' + (node.required !== false ? ' req' : '');
+    btn.textContent = node.required !== false ? 'required' : 'optional';
+    btn.addEventListener('click', e => { e.stopPropagation(); node.required = !node.required; render(); });
+    nh.appendChild(btn);
+  }
+
+  const del = document.createElement('button');
+  del.className = 'del-btn'; del.textContent = '✕';
+  del.addEventListener('click', e => { e.stopPropagation(); nodes.splice(idx, 1); render(); });
+  nh.appendChild(del);
+
+  div.appendChild(nh);
+  return div;
+}
+
+function mkDZ(afterIdx) {
+  const dz = document.createElement('div');
+  dz.className = 'drop-zone'; dz.dataset.after = afterIdx;
+  return dz;
+}
+
+// ── Code generation ──
+function generate() {
+  const name = document.getElementById('wfName').value.trim() || 'My Workflow';
+  const priority = document.getElementById('wfPriority').value;
+  const labels = document.getElementById('wfLabels').value.trim();
+  const lines = [];
+  lines.push(`workflow "${name}"`);
+  lines.push(`priority ${priority}`);
+  if (labels) labels.split(',').map(l=>l.trim()).filter(Boolean).forEach(l=>lines.push(`label ${l}`));
+
+  nodes.forEach(n => {
+    const v = (n.value||'').trim();
+    switch(n.type) {
+      case 'section': lines.push(''); lines.push(`section "${v||'Section'}"`); break;
+      case 'step':    lines.push(`  step "${v||'Step'}"`); break;
+      case 'note':    lines.push(`  note "${v}"`); break;
+      case 'due':     lines.push(`  due ${v||'1d'}`); break;
+      case 'notify':  lines.push(`  notify "${v}"`); break;
+      case 'needs':   lines.push(`  needs ${v||'"Step Name"'}`); break;
+      case 'list':    lines.push(`  list "${v}"${n.required===false?' optional':''}`); break;
+      case 'ask': {
+        // parse: question -> targets (user types full: "Q?" -> "A", "B")
+        // or just the question, we output as-is
+        if (v.includes('->')) {
+          lines.push(`  ask ${v}`);
+        } else {
+          lines.push(`  ask "${v||'Question?'}" -> "Option A", "Option B"`);
+        }
+        break;
+      }
+      case 'gate':    lines.push(`  gate`); break;
+      case 'ends':    lines.push(`  ends`); break;
+    }
+  });
+  return lines.join('\n');
+}
+
+function updatePreview() {
+  if (document.getElementById('previewWrap').classList.contains('open'))
+    document.getElementById('previewCode').textContent = generate();
+}
+
+function togglePreview() {
+  const pw = document.getElementById('previewWrap');
+  pw.classList.toggle('open');
+  if (pw.classList.contains('open'))
+    document.getElementById('previewCode').textContent = generate();
+}
+
+function download() {
+  const name = document.getElementById('wfName').value.trim() || 'my-workflow';
+  const blob = new Blob([generate()], {type:'text/plain'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name.toLowerCase().replace(/\s+/g,'-')+'.workflow';
+  a.click();
+}
+
+function toggleTheme() {
+  const html = document.documentElement;
+  const next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+  html.setAttribute('data-theme', next);
+  localStorage.setItem('theme', next);
+}
+
+['wfName','wfPriority','wfLabels'].forEach(id =>
+  document.getElementById(id).addEventListener('input', updatePreview));
+
+render();
+</script>
+</body>
+</html>
+{{end}}
