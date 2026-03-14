@@ -18,8 +18,8 @@
       <div class="user-menu-sep"></div>
       <a class="user-menu-item" href="/profile">⚙ Einstellungen</a>
       {{if isAdmin .CurrentUser}}
-      <a class="user-menu-item{{if isPage . "users"}} active{{end}}" href="/admin/users">👥 Benutzerverwaltung</a>
-      <a class="user-menu-item{{if isPage . "mail"}} active{{end}}" href="/admin/mail">✉ Mail-Konfiguration</a>
+      <a class="user-menu-item{{if isPage .Page "users"}} active{{end}}" href="/admin/users">👥 Benutzerverwaltung</a>
+      <a class="user-menu-item{{if isPage .Page "mail"}} active{{end}}" href="/admin/mail">✉ Mail-Konfiguration</a>
       {{end}}
       <button class="user-menu-item" onclick="toggleTheme()">◐ Dark Mode</button>
       <div class="user-menu-sep"></div>

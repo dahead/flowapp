@@ -10,7 +10,6 @@ import (
 	"html/template"
 	"log"
 	"net/http"
-	"reflect"
 	"slices"
 	"sort"
 	"strconv"
@@ -141,26 +140,9 @@ func New(s *store.Store, users *auth.UserStore, tmplGlob string) (*Handler, erro
 			return circ - (float64(done)/float64(total))*circ
 		},
 		"canWrite": func(u *auth.User) bool { return u != nil && u.CanWrite() },
-		// isPage returns true if the data's Page field matches the given string.
-		// Safe to call from any template — returns false if Page field doesn't exist.
-		"isPage": func(data any, page string) bool {
-			type pager interface{ GetPage() string }
-			if p, ok := data.(pager); ok {
-				return p.GetPage() == page
-			}
-			// use reflection to read Page field if present
-			v := reflect.ValueOf(data)
-			if v.Kind() == reflect.Ptr {
-				v = v.Elem()
-			}
-			if v.Kind() == reflect.Struct {
-				f := v.FieldByName("Page")
-				if f.IsValid() && f.Kind() == reflect.String {
-					return f.String() == page
-				}
-			}
-			return false
-		},
+		// isPage returns true if the given page name matches the current page.
+		// Each handler sets Page on its data struct so the partial can highlight the active nav link.
+		"isPage": func(page, current string) bool { return page == current },
 		// canDoStep returns true if the user may act on a step.
 		// Admins and steps without an assign field are always allowed.
 		// Otherwise the user must match the assign expression.
@@ -441,6 +423,7 @@ type boardData struct {
 	FilterAssign     string
 	Flash            string
 	CurrentUser      *auth.User
+	Page             string
 }
 
 // board renders the main Kanban board, applying any active filters from query parameters.
@@ -549,7 +532,7 @@ func (h *Handler) board(w http.ResponseWriter, r *http.Request) {
 		FilterQ: r.URL.Query().Get("q"), FilterPriorities: filterPriorities,
 		FilterLabels: filterLabels, FilterDue: filterDue, FilterCreated: filterCreated,
 		FilterSort: filterSort, FilterAssign: filterAssign,
-		Flash: flash, CurrentUser: u,
+		Flash: flash, CurrentUser: u, Page: "board",
 	})
 }
 
@@ -579,13 +562,14 @@ func (h *Handler) newInstancePrompt(w http.ResponseWriter, r *http.Request) {
 	defs := h.store.Definitions()
 	for _, d := range defs {
 		if d.Name == wfName && len(d.Vars) > 0 {
-			h.render(w, r, "new_instance.html", map[string]interface{}{
-				"WorkflowName": wfName,
-				"Title":        title,
-				"Priority":     priority,
-				"Vars":         d.Vars,
-				"CurrentUser":  h.currentUser(r),
-			})
+			h.render(w, r, "new_instance.html", struct {
+				WorkflowName string
+				Title        string
+				Priority     string
+				Vars         []string
+				CurrentUser  *auth.User
+				Page         string
+			}{wfName, title, priority, d.Vars, h.currentUser(r), ""})
 			return
 		}
 	}
@@ -611,16 +595,20 @@ func (h *Handler) archive(w http.ResponseWriter, r *http.Request) {
 	sort.Slice(filtered, func(i, j int) bool {
 		return filtered[i].UpdatedAt.After(filtered[j].UpdatedAt)
 	})
-	h.render(w, r, "archive.html", map[string]interface{}{
-		"Instances":   filtered,
-		"FilterQ":     r.URL.Query().Get("q"),
-		"CurrentUser": u,
-	})
+	h.render(w, r, "archive.html", struct {
+		Instances   []*engine.Instance
+		FilterQ     string
+		CurrentUser *auth.User
+		Page        string
+	}{filtered, r.URL.Query().Get("q"), u, "archive"})
 }
 
 // builder renders the visual workflow builder page.
 func (h *Handler) builder(w http.ResponseWriter, r *http.Request) {
-	h.render(w, r, "builder.html", map[string]interface{}{"CurrentUser": h.currentUser(r)})
+	h.render(w, r, "builder.html", struct {
+		CurrentUser *auth.User
+		Page        string
+	}{h.currentUser(r), "builder"})
 }
 
 // ── Instance ──────────────────────────────────────────────────────────────────
@@ -632,6 +620,7 @@ type instanceData struct {
 	CurrentUser *auth.User
 	PrevID      string
 	NextID      string
+	Page        string
 }
 
 // instanceDetail renders the detail view for a single workflow instance.
@@ -662,7 +651,7 @@ func (h *Handler) instanceDetail(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
-	h.render(w, r, "instance.html", instanceData{inst, getFlash(w, r), h.currentUser(r), prevID, nextID})
+	h.render(w, r, "instance.html", instanceData{inst, getFlash(w, r), h.currentUser(r), prevID, nextID, "instance"})
 }
 
 // createInstance handles the POST form that creates a new workflow instance.
@@ -849,6 +838,7 @@ type approvalData struct {
 	Instance *engine.Instance
 	Done     bool
 	Error    string
+	Page     string
 }
 
 // apiWorkflows returns a JSON list of all available workflow definitions.
@@ -1273,10 +1263,11 @@ func userCanDoStep(u *auth.User, s *engine.StepState) bool {
 // profilePage renders the current user's profile page.
 func (h *Handler) profilePage(w http.ResponseWriter, r *http.Request) {
 	u := h.currentUser(r)
-	h.render(w, r, "profile.html", map[string]any{
-		"CurrentUser": u,
-		"Flash":       getFlash(w, r),
-	})
+	h.render(w, r, "profile.html", struct {
+		CurrentUser *auth.User
+		Flash       string
+		Page        string
+	}{u, getFlash(w, r), "profile"})
 }
 
 // profileSave handles the profile edit form, updating the user's display name
