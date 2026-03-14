@@ -1,16 +1,21 @@
 package main
 
 import (
+	"flag"
 	"flowapp/internal/auth"
 	"flowapp/internal/mailer"
 	"flowapp/internal/store"
 	"flowapp/internal/web"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
 )
 
 func main() {
+	port := flag.Int("port", 8080, "HTTP listen port")
+	flag.Parse()
+
 	if err := os.MkdirAll("setup", 0700); err != nil {
 		log.Fatal("setup dir:", err)
 	}
@@ -40,8 +45,9 @@ func main() {
 		log.Fatal("templates:", err)
 	}
 
+	addr := fmt.Sprintf(":%d", *port)
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
-	log.Println("FlowApp v2 running on http://localhost:8080")
-	log.Fatal(http.ListenAndServe(":8080", mux))
+	log.Printf("FlowApp v2 running on http://localhost%s", addr)
+	log.Fatal(http.ListenAndServe(addr, mux))
 }
