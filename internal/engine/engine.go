@@ -86,26 +86,27 @@ type SectionState struct {
 
 // StepState is the runtime state of a single workflow step.
 type StepState struct {
-	Name       string     `json:"name"`
-	Status     Status     `json:"status"`
-	Note       string     `json:"note,omitempty"`
-	Notify     string     `json:"notify,omitempty"`      // email address to notify when step fires
-	Assign     string     `json:"assign,omitempty"`      // assign expression: "user:<n>", "role:<r>", email
-	Schedule   string     `json:"schedule,omitempty"`    // raw schedule expression
-	ScheduleAt *time.Time `json:"schedule_at,omitempty"` // resolved activation timestamp
-	Due        string     `json:"due,omitempty"`
-	DueAt      *time.Time `json:"due_at,omitempty"`
-	StartedAt  *time.Time `json:"started_at,omitempty"`
-	UpdatedAt  time.Time  `json:"updated_at"`
-	Needs      []string   `json:"needs,omitempty"` // step names that must be done before this activates
-	ListItems  []ListItem `json:"list_items,omitempty"`
-	Ask        *AskState  `json:"ask,omitempty"`
-	Comments   []Comment  `json:"step_comments,omitempty"`
-	Gate       bool       `json:"gate,omitempty"`       // true: step waits for external token approval
-	GateToken  string     `json:"gate_token,omitempty"` // one-time approval token
-	GateUsed   bool       `json:"gate_used,omitempty"`  // true once the token has been redeemed
-	Ends       bool       `json:"ends,omitempty"`       // true: completing this step ends the workflow
-	ChosenIdx  int        `json:"chosen_idx"`           // ask/gate routing choice; -1 = not yet chosen
+	Name            string     `json:"name"`
+	Status          Status     `json:"status"`
+	Note            string     `json:"note,omitempty"`
+	Notify          string     `json:"notify,omitempty"`      // email address to notify when step fires
+	Assign          string     `json:"assign,omitempty"`      // assign expression: "user:<n>", "role:<r>", email
+	Schedule        string     `json:"schedule,omitempty"`    // raw schedule expression
+	ScheduleAt      *time.Time `json:"schedule_at,omitempty"` // resolved activation timestamp
+	Due             string     `json:"due,omitempty"`
+	DueAt           *time.Time `json:"due_at,omitempty"`
+	StartedAt       *time.Time `json:"started_at,omitempty"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+	Needs           []string   `json:"needs,omitempty"` // step names that must be done before this activates
+	ListItems       []ListItem `json:"list_items,omitempty"`
+	Ask             *AskState  `json:"ask,omitempty"`
+	Comments        []Comment  `json:"step_comments,omitempty"`
+	Gate            bool       `json:"gate,omitempty"`             // true: step waits for external token approval
+	GateToken       string     `json:"gate_token,omitempty"`       // one-time approval token
+	GateUsed        bool       `json:"gate_used,omitempty"`        // true once the token has been redeemed
+	Ends            bool       `json:"ends,omitempty"`             // true: completing this step ends the workflow
+	ChosenIdx       int        `json:"chosen_idx"`                 // ask/gate routing choice; -1 = not yet chosen
+	OverdueNotified bool       `json:"overdue_notified,omitempty"` // true once an overdue notification has been sent
 }
 
 // ── Schedule ──────────────────────────────────────────────────────────────────
@@ -385,6 +386,49 @@ func (inst *Instance) TickScheduled() bool {
 		inst.UpdatedAt = now
 	}
 	return activated
+}
+
+// TickOverdue scans all active steps and fires overdue notifications for any that
+// have passed their due date and haven't been notified yet. The OverdueNotified
+// flag is set on first notification to prevent repeated emails on every tick.
+// Returns true if at least one notification was fired.
+func (inst *Instance) TickOverdue() bool {
+	var fired bool
+	inst.allSteps(func(s *StepState) {
+		if !s.IsOverdue() {
+			return
+		}
+		if s.OverdueNotified {
+			return
+		}
+		s.OverdueNotified = true
+		fired = true
+		m, r := inst.MailSender, inst.EmailResolver
+		scopy := *s
+		// notify the assigned user or the notify address
+		target := scopy.Assign
+		if target == "" {
+			target = scopy.Notify
+		}
+		if target == "" || m == nil || r == nil {
+			log.Printf("[engine] overdue: step '%s' in '%s' is overdue (no notification target)", s.Name, inst.Title)
+			return
+		}
+		log.Printf("[engine] overdue: firing notification for step '%s' in '%s'", s.Name, inst.Title)
+		go func() {
+			to := r(target)
+			if len(to) == 0 {
+				return
+			}
+			subject := fmt.Sprintf("[flowapp] ⚠ Overdue: %s — %s", scopy.Name, inst.Title)
+			plain := fmt.Sprintf("Step %q in workflow %q is overdue.\n\nInstance: %s\nWorkflow: %s\nStep: %s\n",
+				scopy.Name, inst.WorkflowName, inst.Title, inst.WorkflowName, scopy.Name)
+			if err := m.Send(MailMessage{To: to, Subject: subject, PlainBody: plain}); err != nil {
+				log.Printf("[engine] overdue mail error: %v", err)
+			}
+		}()
+	})
+	return fired
 }
 
 // needsSatisfied returns true if all steps listed in s.Needs are in a terminal state.

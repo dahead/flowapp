@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flowapp/internal/dsl"
 	"flowapp/internal/engine"
+	"flowapp/internal/mailer"
 	"fmt"
 	"log"
 	"os"
@@ -23,6 +24,7 @@ type Store struct {
 	dataDir     string
 	workflowDir string
 	definitions map[string]*dsl.Workflow
+	fileNames   map[string]string // workflow name → filename (e.g. "Onboarding" → "onboarding.workflow")
 	instances   map[string]*engine.Instance
 
 	// optional mailer and email resolver; nil = log-only notifications
@@ -80,7 +82,11 @@ func (s *Store) runScheduler() {
 				continue
 			}
 			s.inject(inst)
-			if inst.TickScheduled() {
+			changed := inst.TickScheduled()
+			if inst.TickOverdue() {
+				changed = true
+			}
+			if changed {
 				if err := s.save(inst); err != nil {
 					log.Printf("[scheduler] save error for %s: %v", inst.ID, err)
 				}
@@ -160,7 +166,7 @@ func (s *Store) loadDefinitions() error {
 			if _, dup := s.definitions[wf.Name]; !dup {
 				break
 			}
-			wf.Name = fmt.Sprintf("%s (copy %d)", origName, i)
+			wf.Name = fmt.Sprintf("%s -%d", origName, i)
 		}
 		if wf.Name != origName {
 			log.Printf("[store] WARNING: duplicate name '%s' in %s — renamed to '%s'", origName, e.Name(), wf.Name)
@@ -525,4 +531,43 @@ func (s *Store) DeleteInstance(id string) error {
 	}
 	delete(s.instances, id)
 	return os.Remove(filepath.Join(s.dataDir, id+".json"))
+}
+
+// ── Mail configuration ────────────────────────────────────────────────────────
+
+// GetMailConfig loads the current mail config from disk, or returns an empty config if none exists.
+func (s *Store) GetMailConfig() *mailer.Config {
+	cfg, err := mailer.LoadConfig()
+	if err != nil {
+		return &mailer.Config{}
+	}
+	return cfg
+}
+
+// SaveMailConfig writes a new mail config to disk and reloads the active mailer.
+func (s *Store) SaveMailConfig(cfg *mailer.Config, resolver engine.EmailResolver) error {
+	path, err := mailer.GetConfigPath()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return err
+	}
+	// reload the active mailer
+	if cfg.Type != "" {
+		if m, err := mailer.NewMailerFromConfig(cfg); err == nil {
+			s.SetMailer(mailer.EngineAdapter{M: m, From: cfg.From}, resolver)
+			log.Printf("[store] mail config reloaded: type=%s", cfg.Type)
+		} else {
+			return fmt.Errorf("config saved but mailer init failed: %w", err)
+		}
+	}
+	return nil
 }

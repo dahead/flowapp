@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flowapp/internal/auth"
 	"flowapp/internal/engine"
+	"flowapp/internal/mailer"
 	"flowapp/internal/store"
 	"fmt"
 	"html/template"
@@ -282,6 +283,9 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /admin/users/{id}/edit", h.requireAdmin(h.requireCSRF(h.adminEditUser)))
 	mux.HandleFunc("POST /admin/users/{id}/delete", h.requireAdmin(h.requireCSRF(h.adminDeleteUser)))
 	mux.HandleFunc("POST /admin/users/{id}/password", h.requireAdmin(h.requireCSRF(h.adminResetPassword)))
+	mux.HandleFunc("GET /admin/mail", h.requireAdmin(h.adminMailPage))
+	mux.HandleFunc("POST /admin/mail", h.requireAdmin(h.requireCSRF(h.adminMailSave)))
+	mux.HandleFunc("POST /admin/mail/test", h.requireAdmin(h.requireCSRF(h.adminMailTest)))
 }
 
 // ── Setup ─────────────────────────────────────────────────────────────────────
@@ -941,7 +945,92 @@ func (h *Handler) adminResetPassword(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
 }
 
+// ── Admin: mail config ────────────────────────────────────────────────────────
+
+type mailAdminData struct {
+	Config      *mailer.Config
+	Flash       string
+	Error       string
+	TestOK      bool
+	CurrentUser *auth.User
+}
+
+// adminMailPage renders the mail configuration page.
+func (h *Handler) adminMailPage(w http.ResponseWriter, r *http.Request) {
+	h.render(w, r, "admin_mail.html", mailAdminData{
+		Config:      h.store.GetMailConfig(),
+		Flash:       getFlashOK(w, r),
+		CurrentUser: h.currentUser(r),
+	})
+}
+
+// adminMailSave saves the mail configuration and reloads the mailer.
+func (h *Handler) adminMailSave(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	cfg := &mailer.Config{
+		Type:              r.FormValue("type"),
+		From:              strings.TrimSpace(r.FormValue("from")),
+		SMTPHost:          strings.TrimSpace(r.FormValue("smtp_host")),
+		SMTPUsername:      strings.TrimSpace(r.FormValue("smtp_username")),
+		SMTPPassword:      r.FormValue("smtp_password"),
+		GraphTenantID:     strings.TrimSpace(r.FormValue("graph_tenant_id")),
+		GraphClientID:     strings.TrimSpace(r.FormValue("graph_client_id")),
+		GraphClientSecret: r.FormValue("graph_client_secret"),
+		GraphSenderUPN:    strings.TrimSpace(r.FormValue("graph_sender_upn")),
+	}
+	if port, err := strconv.Atoi(r.FormValue("smtp_port")); err == nil {
+		cfg.SMTPPort = port
+	}
+	if err := h.store.SaveMailConfig(cfg, h.users.ResolveEmails); err != nil {
+		h.render(w, r, "admin_mail.html", mailAdminData{
+			Config: cfg, Error: err.Error(), CurrentUser: h.currentUser(r),
+		})
+		return
+	}
+	flashSuccess(w, r, "Mail configuration saved.")
+	http.Redirect(w, r, "/admin/mail", http.StatusSeeOther)
+}
+
+// adminMailTest sends a test email to the current admin's address.
+func (h *Handler) adminMailTest(w http.ResponseWriter, r *http.Request) {
+	u := h.currentUser(r)
+	cfg := h.store.GetMailConfig()
+	if cfg.Type == "" {
+		h.render(w, r, "admin_mail.html", mailAdminData{
+			Config: cfg, Error: "No mail config saved yet.", CurrentUser: u,
+		})
+		return
+	}
+	m, err := mailer.NewMailerFromConfig(cfg)
+	if err != nil {
+		h.render(w, r, "admin_mail.html", mailAdminData{
+			Config: cfg, Error: "Mailer init failed: " + err.Error(), CurrentUser: u,
+		})
+		return
+	}
+	adapter := mailer.EngineAdapter{M: m, From: cfg.From}
+	testMsg := mailer.Message{
+		From:      cfg.From,
+		To:        []string{u.Email},
+		Subject:   "[flowapp] Test email",
+		PlainBody: "This is a test email from FlowApp. Your mail configuration is working correctly.",
+	}
+	if err := adapter.M.Send(testMsg); err != nil {
+		h.render(w, r, "admin_mail.html", mailAdminData{
+			Config: cfg, Error: "Send failed: " + err.Error(), CurrentUser: u,
+		})
+		return
+	}
+	flashSuccess(w, r, "Test email sent to "+u.Email)
+	http.Redirect(w, r, "/admin/mail", http.StatusSeeOther)
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+// flashSuccess sets a short-lived success cookie.
+func flashSuccess(w http.ResponseWriter, r *http.Request, msg string) {
+	http.SetCookie(w, &http.Cookie{Name: "flash_ok", Value: msg, Path: "/", MaxAge: 10})
+}
 
 // flashError sets a short-lived error cookie and redirects back to the referring page.
 func flashError(w http.ResponseWriter, r *http.Request, msg string) {
@@ -961,6 +1050,16 @@ func getFlash(w http.ResponseWriter, r *http.Request) string {
 		return ""
 	}
 	http.SetCookie(w, &http.Cookie{Name: "flash_error", Path: "/", MaxAge: -1})
+	return c.Value
+}
+
+// getFlashOK reads and immediately clears the flash success cookie.
+func getFlashOK(w http.ResponseWriter, r *http.Request) string {
+	c, err := r.Cookie("flash_ok")
+	if err != nil {
+		return ""
+	}
+	http.SetCookie(w, &http.Cookie{Name: "flash_ok", Path: "/", MaxAge: -1})
 	return c.Value
 }
 

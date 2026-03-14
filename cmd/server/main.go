@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"flowapp/internal/auth"
 	"flowapp/internal/mailer"
@@ -10,6 +11,9 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 )
 
 func main() {
@@ -50,6 +54,27 @@ func main() {
 	addr := fmt.Sprintf(":%d", *port)
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
-	log.Printf("FlowApp v2 running on http://localhost%s", addr)
-	log.Fatal(http.ListenAndServe(addr, mux))
+
+	srv := &http.Server{Addr: addr, Handler: mux}
+
+	// start server in background
+	go func() {
+		log.Printf("FlowApp v2 running on http://localhost%s", addr)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("listen: %v", err)
+		}
+	}()
+
+	// wait for SIGINT or SIGTERM
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+	log.Println("[main] shutdown signal received — draining requests...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Printf("[main] forced shutdown: %v", err)
+	}
+	log.Println("[main] server stopped cleanly")
 }

@@ -32,34 +32,7 @@
     <button type="submit">+ New</button>
   </form>
   {{end}}
-  {{if .CurrentUser}}
-  <div class="user-menu-wrap">
-    <button class="user-menu-btn" onclick="toggleUserMenu()" title="{{.CurrentUser.Name}}">
-      <span class="user-avatar-sm">{{initial .CurrentUser.Name}}</span>
-    </button>
-    <div class="user-menu-dropdown" id="userMenuDropdown">
-      <div class="user-menu-header">
-        <div class="user-menu-avatar">{{initial .CurrentUser.Name}}</div>
-        <div>
-          <div class="user-menu-name">{{.CurrentUser.Name}}</div>
-          <div class="user-menu-email">{{.CurrentUser.Email}}</div>
-        </div>
-      </div>
-      <div class="user-menu-sep"></div>
-      <a class="user-menu-item" href="/builder">⚙ Builder</a>
-      <a class="user-menu-item" href="/archive">📦 Archive</a>
-      <div class="user-menu-sep"></div>
-      <a class="user-menu-item" href="/profile">⚙ Einstellungen</a>
-      {{if isAdmin .CurrentUser}}<a class="user-menu-item" href="/admin/users">👥 Benutzerverwaltung</a>{{end}}
-      <button class="user-menu-item" onclick="toggleTheme()">◐ Dark Mode</button>
-      <div class="user-menu-sep"></div>
-      <form method="POST" action="/logout" style="margin:0;">
-                {{csrfField .CurrentUser}}
-        <button type="submit" class="user-menu-item danger">⏻ Logout</button>
-      </form>
-    </div>
-  </div>
-  {{end}}
+  {{template "menu-user" .}}
 </header>
 
 <div class="filter-bar" id="filterBar">
