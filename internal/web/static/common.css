@@ -78,3 +78,11 @@ header h1, header h2 { font-size: 1.2rem; }
 .form-actions { display: flex; gap: 0.75rem; justify-content: flex-end; margin-top: 1.5rem; }
 
 kbd { background: var(--bg4); border: 1px solid var(--border); border-radius: 4px; padding: 1px 7px; font-size: 0.78rem; font-family: monospace; color: var(--accent); }
+
+/* ── Form fields ── */
+.field { display: flex; flex-direction: column; gap: 0.25rem; margin-bottom: 0.9rem; }
+.field label { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text3); }
+.field input,
+.field select,
+.field textarea { border: 1.5px solid var(--border); border-radius: 7px; padding: 0.42rem 0.65rem; font-size: 0.92rem; font-family: inherit; outline: none; background: var(--bg); color: var(--text); }
+.field input:focus, .field select:focus, .field textarea:focus { border-color: var(--accent); }

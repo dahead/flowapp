@@ -146,8 +146,7 @@
     <div class="card-drop-zone" data-col="{{$col}}" data-before="__start__"></div>
     {{range $column.Cards}}
     <div class="card {{.Priority}}{{if .IsDone}} done-card{{end}}"
-         data-id="{{.ID}}" data-col="{{$col}}"
-         onclick="cardClick(event, '/instance/{{.ID}}')">
+         data-id="{{.ID}}" data-col="{{$col}}">
       <div class="card-drag-handle" title="Drag to reorder">⠿</div>
       <div class="card-title">{{.Title}}</div>
       <div class="card-wf">{{.WorkflowName}}</div>
@@ -474,7 +473,7 @@ let _workflows = [];
 fetch('/api/workflows')
   .then(function(r) { return r.json(); })
   .then(function(data) { _workflows = data; })
-  .catch(function(e) {
+  .catch(function(e) { /* fetch error */ });
 function checkVarsRedirect(form) {
   var wfName = document.getElementById('wfSelect').value;
   var wf = _workflows.find(function(w) { return w.name === wfName; });

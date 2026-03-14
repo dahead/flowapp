@@ -4,24 +4,14 @@
     <option name="autoReloadType" value="ALL" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="ada8723d-5b9c-428d-afc5-8d56573480fd" name="Changes" comment="CSS out sourced, rate limiter, logic errors, archive, variables.">
+    <list default="true" id="ada8723d-5b9c-428d-afc5-8d56573480fd" name="Changes" comment="No browser console logging.">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/data/1773427348769114060.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/store/store.go" beforeDir="false" afterPath="$PROJECT_DIR$/internal/store/store.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/internal/web/static/admin.css" beforeDir="false" afterPath="$PROJECT_DIR$/internal/web/static/admin.css" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/web/static/app.css" beforeDir="false" afterPath="$PROJECT_DIR$/internal/web/static/app.css" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/web/static/archive.css" beforeDir="false" afterPath="$PROJECT_DIR$/internal/web/static/archive.css" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/internal/web/static/board.css" beforeDir="false" afterPath="$PROJECT_DIR$/internal/web/static/board.css" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/web/templates/admin.html" beforeDir="false" afterPath="$PROJECT_DIR$/internal/web/templates/admin.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/web/templates/approve.html" beforeDir="false" afterPath="$PROJECT_DIR$/internal/web/templates/approve.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/web/templates/archive.html" beforeDir="false" afterPath="$PROJECT_DIR$/internal/web/templates/archive.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/internal/web/static/builder.css" beforeDir="false" afterPath="$PROJECT_DIR$/internal/web/static/builder.css" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/internal/web/static/common.css" beforeDir="false" afterPath="$PROJECT_DIR$/internal/web/static/common.css" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/internal/web/templates/board.html" beforeDir="false" afterPath="$PROJECT_DIR$/internal/web/templates/board.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/web/templates/builder.html" beforeDir="false" afterPath="$PROJECT_DIR$/internal/web/templates/builder.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/web/templates/error.html" beforeDir="false" afterPath="$PROJECT_DIR$/internal/web/templates/error.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/web/templates/instance.html" beforeDir="false" afterPath="$PROJECT_DIR$/internal/web/templates/instance.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/web/templates/login.html" beforeDir="false" afterPath="$PROJECT_DIR$/internal/web/templates/login.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/web/templates/new_instance.html" beforeDir="false" afterPath="$PROJECT_DIR$/internal/web/templates/new_instance.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/web/templates/setup.html" beforeDir="false" afterPath="$PROJECT_DIR$/internal/web/templates/setup.html" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -29,7 +19,7 @@
     <option name="LAST_RESOLUTION" value="IGNORE" />
   </component>
   <component name="EmbeddingIndexingInfo">
-    <option name="cachedIndexableFilesCount" value="71" />
+    <option name="cachedIndexableFilesCount" value="81" />
     <option name="fileBasedEmbeddingIndicesEnabled" value="true" />
   </component>
   <component name="GOROOT" url="file:///usr/lib/go" />
@@ -163,6 +153,9 @@
     <MESSAGE value="Screenshots" />
     <MESSAGE value="Builds" />
     <MESSAGE value="CSS out sourced, rate limiter, logic errors, archive, variables." />
-    <option name="LAST_COMMIT_MESSAGE" value="CSS out sourced, rate limiter, logic errors, archive, variables." />
+    <MESSAGE value="Fixes" />
+    <MESSAGE value="Builds: Updated file" />
+    <MESSAGE value="No browser console logging." />
+    <option name="LAST_COMMIT_MESSAGE" value="No browser console logging." />
   </component>
 </project>

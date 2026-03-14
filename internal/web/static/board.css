@@ -51,7 +51,7 @@
 .column-title { transition: color 0.15s; }
 .column-title { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text3); margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.5rem; }
 .col-count { background: var(--bg3); border-radius: 10px; padding: 1px 8px; font-size: 0.72rem; color: var(--text2); border: 1px solid var(--border); }
-.card { background: var(--bg2); border-radius: 12px; box-shadow: var(--card-shadow); padding: 1rem 1rem 1rem 1.1rem; margin-bottom: 0.85rem; cursor: pointer; transition: box-shadow 0.15s; border-left: 4px solid transparent; }
+.card { position: relative; background: var(--bg2); border-radius: 12px; box-shadow: var(--card-shadow); padding: 1rem 1rem 1rem 1.5rem; margin-bottom: 0.85rem; cursor: pointer; transition: box-shadow 0.15s; border-left: 4px solid transparent; }
 .card:hover { box-shadow: var(--card-shadow-hover); }
 .card.high   { border-left-color: #dc2626; }
 .card.medium { border-left-color: #d97706; }
@@ -71,10 +71,8 @@
 .card:hover .card-drag-handle { opacity: 1; }
 .col-body { overflow: hidden; transition: max-height 0.25s ease, opacity 0.2s; max-height: 9999px; opacity: 1; }
 .col-body.collapsed { max-height: 0; opacity: 0; }
-.card { position: relative; padding-left: 1.5rem; }
 .col-body { overflow: hidden; transition: max-height 0.25s ease, opacity 0.2s; max-height: 9999px; opacity: 1; }
 .col-body.collapsed { max-height: 0; opacity: 0; }
-.card { position: relative; }
 .card.dragging { opacity: 0.35; }
 .card-drop-zone { height: 5px; border-radius: 3px; margin: 2px 0; transition: all 0.12s; }
 .card-drop-zone.drag-over { height: 48px; background: var(--chip-label-bg); border: 2px dashed var(--accent); border-radius: 10px; }
