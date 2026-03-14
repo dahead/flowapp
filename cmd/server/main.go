@@ -14,6 +14,8 @@ import (
 
 func main() {
 	port := flag.Int("port", 8080, "HTTP listen port")
+	dataDir := flag.String("data", "data", "Directory for instance data files")
+	wfDir := flag.String("workflows", "workflows", "Directory for .workflow definition files")
 	flag.Parse()
 
 	if err := os.MkdirAll("setup", 0700); err != nil {
@@ -24,7 +26,7 @@ func main() {
 		log.Fatal("userstore:", err)
 	}
 
-	s, err := store.New("workflows", "data")
+	s, err := store.New(*wfDir, *dataDir)
 	if err != nil {
 		log.Fatal("store:", err)
 	}

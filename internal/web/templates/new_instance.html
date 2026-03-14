@@ -33,6 +33,7 @@ h2{font-size:1.1rem;margin-bottom:0.25rem;}
   <h2>{{.WorkflowName}}</h2>
   <div class="subtitle">Fill in the details to create a new instance</div>
   <form method="POST" action="/instance">
+                {{csrfField .CurrentUser}}
     <input type="hidden" name="workflow" value="{{.WorkflowName}}">
     <div class="field">
       <label>Title</label>

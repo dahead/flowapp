@@ -1,10 +1,8 @@
 # FlowApp v2
 
-A lightweight workflow management app written in Go. Define processes as `.workflow` files, run instances, track parallel tasks, and collect external approvals via tokenized links.
+A lightweight workflow management app written in Go. Define processes as `.workflow` files, run instances, track parallel tasks, collect external approvals via tokenized links, and get notified by email.
 
 ## Overview
-
-Overview:
 
 ![FlowApp screenshot main page overview](/screenshots/overview-dark-v2.png)
 
@@ -31,26 +29,88 @@ go run ./cmd/server
 # → http://localhost:8080
 ```
 
+On first start with an empty `data/` directory, FlowApp redirects to `/setup` to create the first admin account.
+
+## Command Line Flags
+
+```
+./flowapp [flags]
+
+  --port       int     HTTP listen port (default: 8080)
+  --data       string  Directory for instance data files (default: "data")
+  --workflows  string  Directory for .workflow definition files (default: "workflows")
+```
+
+Example:
+
+```bash
+./flowapp --port 9090 --data /var/flowapp/data --workflows /etc/flowapp/workflows
+```
+
+## Session Secret
+
+By default FlowApp generates a random session secret on first start and persists it to `~/.config/flowapp/session-secret` so sessions survive restarts.
+
+For production, set it explicitly via environment variable:
+
+```bash
+SESSION_SECRET=your-32-byte-secret ./flowapp
+```
+
+## Mail Notifications
+
+Create `~/.config/flowapp/mail-config.json` to enable email notifications:
+
+**SMTP:**
+```json
+{
+  "type": "smtp",
+  "from": "flowapp@example.com",
+  "smtp_host": "mailrelay.example.com",
+  "smtp_port": 587,
+  "smtp_username": "user",
+  "smtp_password": "secret"
+}
+```
+
+**Microsoft Graph (Office 365):**
+```json
+{
+  "type": "graph",
+  "from": "flowapp@example.com",
+  "graph_tenant_id": "...",
+  "graph_client_id": "...",
+  "graph_client_secret": "...",
+  "graph_sender_upn": "flowapp@example.com"
+}
+```
+
+Without a config file, notifications are written to the server log only.
+
 ## DSL Reference
 
-Workflow files live in `workflows/`. Hot-reloaded on save.
+Workflow files live in `workflows/`. They are hot-reloaded on save — no restart needed.
 
 ```
 workflow "Name"
 priority high          # low | medium | high (default: medium)
 label finance          # multiple labels allowed
+var "Employee Name"    # prompts for a value when creating an instance ($Employee Name)
 
 section "Name"
   step "Name"
     note "Hint text shown on the step"
     due 2d             # 2h | 3d | 1w — deadline starts when step becomes ready
-    notify "email"     # logged to notifications.log on completion
-    needs "Step A", "Step B"   # AND-join: all must be done first
-    list "Item text"   # checklist item (default: required)
-    list "Item text" optional
-    ask "Question?" -> "Option A", "Option B", "Option C"
-    gate               # step waits for external click via token link
-    ends               # terminal step — this path ends here
+    assign "user:anna"          # assign to a specific user (by name or email)
+    assign "role:finance"       # assign to all users with this app role
+    notify "manager@company.com"  # send email when step fires
+    needs "Step A", "Step B"    # AND-join: all must be done first
+    schedule +3d        # activate 3 days after instance creation (also: +2w, +4h, 2025-12-01)
+    item "Required item"        # checklist item — blocks completion until checked
+    item "Optional item" optional
+    ask "Question?" -> "Option A", "Option B"
+    gate                # waits for external approval via token link
+    ends                # terminal step — this path ends here
 ```
 
 ### Keywords
@@ -58,104 +118,155 @@ section "Name"
 | Keyword | Scope | Description |
 |---|---|---|
 | `workflow` | top | Workflow name |
-| `priority` | top | low / medium / high |
+| `priority` | top | `low` / `medium` / `high` |
 | `label` | top | Tag for filtering (multiple allowed) |
-| `section` | top | Visual group — no runtime semantics |
+| `var` | top | Variable name — prompted at instance creation, substituted as `$Name` |
+| `section` | top | Visual group — no runtime effect |
 | `step` | section | A task. Name must be unique within the workflow |
-| `note` | step | Description text |
+| `note` | step | Description text shown on the step card |
 | `due` | step | Relative deadline from when step becomes ready |
-| `notify` | step | Writes to notifications.log; gate steps include approval link |
-| `needs` | step | Comma-separated step names — all must be done/skipped |
-| `list` | step | Checklist item; `required` (default) blocks completion |
-| `ask` | step | Presents N buttons; routes to chosen target step |
-| `gate` | step | Waits for external approval via `/approve/{token}` |
-| `ends` | step | Marks this path as terminated |
+| `assign` | step | Assign to `user:<name/email>` or `role:<rolename>` — restricts who can complete the step |
+| `notify` | step | Email address notified when the step fires; gate steps include the approval link |
+| `needs` | step | Comma-separated step names — all must be done/skipped before this activates |
+| `schedule` | step | Delay activation: relative (`+3d`, `+2w`, `+4h`) or absolute (`2025-12-01`) |
+| `item` | step | Checklist entry; `optional` makes it non-blocking (required by default) |
+| `ask` | step | Presents N buttons; routes to the chosen target step, skips the rest |
+| `gate` | step | Waits for external approval via `/approve/{token}` — no login required |
+| `ends` | step | Marks this path as terminated — instance completes when all paths end |
 
 ### Flow Rules
 
 - Steps with no `needs` start immediately when the instance is created
 - `needs "A", "B"` = AND-join: waits for **all** listed steps
 - `ask "?" -> "X", "Y"` = XOR-split: chosen target activates, others are skipped
-- `gate` generates a one-time token; combine with `notify` to send approval link by email
+- `gate` generates a one-time token; combine with `notify` to send the approval link by email
+- `gate` + `ask` = external routing decision (e.g. Approve / Reject)
+- `schedule` delays activation even if all `needs` are already satisfied
 - Cross-section `needs` are fully supported
 
-### Example: Parallel + Join
+### Variables
 
 ```
-workflow "Parallel Demo"
+workflow "Onboarding"
+var "Employee Name"
+var "Start Date"
 
-section "Parallel Work"
-  step "Start"
-
-  step "Task A"
-    needs "Start"
-
-  step "Task B"
-    needs "Start"
-
-  step "Review"
-    needs "Task A", "Task B"   # waits for both
+section "Preparation"
+  step "Prepare workspace for $Employee Name"
+    note "Start date: $Start Date"
 ```
+
+Variable values are entered when creating a new instance and substituted throughout.
 
 ### External Approvals (gate)
 
 ```
 step "Manager Approval"
-  ask "Approve?" -> "Proceed", "Reject"
+  ask "Approve request?" -> "Approved", "Rejected"
   gate
   notify "manager@company.com"
 ```
 
 When this step becomes ready:
 1. A one-time token is generated
-2. `notifications.log` receives: `approval link: /approve/{token}`
+2. The notified address receives: `Approval link: /approve/{token}`
 3. The recipient opens the link — no login required
-4. They click a button; the workflow continues
+4. They click a button; the workflow continues on the chosen path
+
+Simple gate without routing (just a confirmation):
+
+```
+step "Final Sign-off"
+  gate
+  notify "director@company.com"
+```
+
+## User Roles
+
+| Role | Complete steps | Archive | Clone | Delete | Admin |
+|---|---|---|---|---|---|
+| Viewer | – | – | – | – | – |
+| User | ✓ | ✓ | – | – | – |
+| Manager | ✓ | ✓ | ✓ | ✓ | – |
+| Admin | ✓ | ✓ | ✓ | ✓ | ✓ |
+
+**App Roles** (e.g. `hr`, `finance`) are separate from the site role. They are used in workflow `assign` directives to restrict which users can complete a specific step.
+
+## Kanban Board
+
+Instances are displayed in three columns: **Todo**, **In Progress**, **Done**.
+
+**Filters:**
+- Free text search (title + workflow name)
+- Priority: `low` / `medium` / `high`
+- Labels
+- Due: `overdue` / `today` / `7d`
+- Created: `today` / `7d` / `30d`
+- Assign: `me` (steps assigned to the current user)
+
+**Sort:** position (drag & drop) / updated / priority / created
 
 ## HTTP Routes
 
-| Method | Path | Description |
-|---|---|---|
-| GET | / | Kanban board |
-| GET | /builder | Visual workflow builder |
-| GET | /instance/{id} | Instance detail |
-| POST | /instance | Create new instance |
-| POST | /instance/{id}/edit | Update title/priority/labels |
-| POST | /instance/{id}/step | Complete a ready step |
-| POST | /instance/{id}/ask | Answer an ask step |
-| POST | /instance/{id}/clone | Clone instance |
-| POST | /instance/{id}/delete | Delete instance |
-| POST | /instance/{id}/comment | Add comment |
-| POST | /instance/{id}/listitem/toggle | Toggle checklist item |
-| POST | /instance/{id}/listitem/add | Add dynamic checklist item |
-| POST | /instance/{id}/listitem/checkall | Check all items |
-| GET | /approve/{token} | External approval page |
-| POST | /approve/{token} | Submit external approval |
-
-## Included Workflows
-
-| File | Labels | Description |
-|---|---|---|
-| invoice.workflow | finance | Order → ship → invoice → payment |
-| onboarding.workflow | hr | Parallel HR/IT/Office/Buddy tracks with gate approvals |
-| offboarding.workflow | hr | Exit interview, payroll, IT revocation, asset return |
-| reisekostenabrechnung.workflow | finance | Expense report submission and approval |
-| vertragsmanagement.workflow | finance, legal | Contract drafting → review → sign |
-| product-launch.workflow | product | Design → build → pilot → launch approval |
-| shopping.workflow | shopping | Simple shopping list workflow |
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| GET | `/` | user+ | Kanban board |
+| GET | `/builder` | user+ | Visual workflow builder |
+| GET | `/archive` | user+ | Archived instances |
+| GET | `/instance/{id}` | user+ | Instance detail |
+| POST | `/instance` | user+ | Create new instance |
+| POST | `/instance/{id}/edit` | user+ | Update title/priority/labels |
+| POST | `/instance/{id}/step` | user+ | Complete a ready step |
+| POST | `/instance/{id}/ask` | user+ | Answer an ask step |
+| POST | `/instance/{id}/archive` | user+ | Archive instance |
+| POST | `/instance/{id}/clone` | manager+ | Clone instance |
+| POST | `/instance/{id}/delete` | manager+ | Delete instance |
+| POST | `/instance/{id}/comment` | user+ | Add comment |
+| POST | `/instance/{id}/stepcomment` | user+ | Add step comment |
+| POST | `/instance/{id}/listitem/toggle` | user+ | Toggle checklist item |
+| POST | `/instance/{id}/listitem/add` | user+ | Add dynamic checklist item |
+| POST | `/instance/{id}/listitem/checkall` | user+ | Check all items |
+| POST | `/reorder` | user+ | Drag & drop reorder |
+| GET | `/approve/{token}` | none | External approval page |
+| POST | `/approve/{token}` | none | Submit external approval |
+| GET | `/api/workflows` | none | JSON list of workflow definitions |
+| GET | `/admin/users` | admin | User management |
 
 ## Step Statuses
 
 | Status | Meaning |
 |---|---|
-| `pending` | Needs not yet satisfied |
+| `pending` | Waiting for needs or schedule |
 | `ready` | Can be completed |
-| `ask` | Waiting for UI choice |
+| `ask` | Waiting for a routing decision |
 | `gate` | Waiting for external token redemption |
 | `done` | Completed |
 | `skipped` | Bypassed by ask routing |
 | `ended` | Terminal step reached |
 
-## Auth Setup
+## Security
 
-On first start with no `data/users.json`, FlowApp redirects to `/setup` to create the admin account.
+- Session cookies: HMAC-SHA256 signed, HTTP-only, SameSite=Lax, 7-day TTL
+- CSRF protection: session-bound tokens on all state-changing POST requests
+- Login rate limiting: 5 attempts per 15 minutes, 30-minute lockout
+- Gate approval pages check that logged-in Viewers cannot approve steps
+- Session secret persisted across restarts (or set via `SESSION_SECRET` env var)
+
+## Included Workflows
+
+| File | Labels | Description |
+|---|---|---|
+| `invoice.workflow` | finance | Order → ship → invoice → payment |
+| `onboarding.workflow` | hr | Parallel HR/IT/Office/Buddy tracks with gate approvals |
+| `offboarding.workflow` | hr | Exit interview, payroll, IT revocation, asset return |
+| `reisekostenabrechnung.workflow` | finance | Expense report submission and approval |
+| `vertragsmanagement.workflow` | finance, legal | Contract drafting → review → sign |
+| `product-launch.workflow` | product | Design → build → pilot → launch approval |
+| `krankmeldung.workflow` | hr | Sick leave notification flow |
+| `urlaub-beantragen.workflow` | hr | Holiday request with approval gate |
+| `gehaltsverhandlung.workflow` | hr | Salary review process |
+| `kontowechsel.workflow` | finance | Bank account change request |
+| `shopping.workflow` | — | Shopping list with parallel tracks |
+| `shopping-simple.workflow` | — | Simple linear shopping list |
+| `parallel-demo.workflow` | — | Parallel + join pattern demo |
+| `demo-schedule-assign.workflow` | — | Schedule and assign feature demo |

@@ -32,6 +32,7 @@
       <button class="user-menu-item" onclick="toggleTheme()">◐ Dark Mode</button>
       <div class="user-menu-sep"></div>
       <form method="POST" action="/logout" style="margin:0;">
+                {{csrfField .CurrentUser}}
         <button type="submit" class="user-menu-item danger">⏻ Logout</button>
       </form>
     </div>
@@ -68,6 +69,7 @@
     <div class="form-box">
       <h3>Neuen Benutzer anlegen</h3>
       <form method="POST" action="/admin/users">
+                {{csrfField .CurrentUser}}
         <div class="field"><label>Name</label><input type="text" name="name" required></div>
         <div class="field"><label>E-Mail</label><input type="email" name="email" required></div>
         <div class="field"><label>Passwort</label><input type="password" name="password" placeholder="min. 8 Zeichen" required></div>
@@ -75,6 +77,7 @@
           <select name="role">
             <option value="viewer">Viewer</option>
             <option value="user" selected>User</option>
+            <option value="manager">Manager</option>
             <option value="admin">Admin</option>
           </select>
         </div>
@@ -89,12 +92,14 @@
   <div class="modal-box">
     <h3>Benutzer bearbeiten</h3>
     <form method="POST" id="editForm">
+                {{csrfField .CurrentUser}}
       <div class="field"><label>Name</label><input type="text" name="name" id="editName" required></div>
       <div class="field"><label>E-Mail</label><input type="email" name="email" id="editEmail" required></div>
       <div class="field"><label>Rolle</label>
         <select name="role" id="editRole">
           <option value="viewer">Viewer</option>
           <option value="user">User</option>
+          <option value="manager">Manager</option>
           <option value="admin">Admin</option>
         </select>
       </div>
@@ -120,6 +125,7 @@
   <div class="modal-box">
     <h3>Passwort zurücksetzen: <span id="pwName"></span></h3>
     <form method="POST" id="pwForm">
+                {{csrfField .CurrentUser}}
       <div class="field"><label>Neues Passwort</label><input type="password" name="password" id="pwInput" placeholder="min. 8 Zeichen" required></div>
       <div class="modal-actions">
         <button type="button" class="btn-sm" onclick="closeModals()">Abbrechen</button>
@@ -137,6 +143,7 @@
     <div class="modal-actions">
       <button type="button" class="btn-sm" onclick="closeModals()">Abbrechen</button>
       <form method="POST" id="delForm" style="display:inline;">
+                {{csrfField .CurrentUser}}
         <button type="submit" class="btn-sm danger">Löschen</button>
       </form>
     </div>

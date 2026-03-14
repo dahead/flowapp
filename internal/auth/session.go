@@ -5,11 +5,13 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -17,22 +19,52 @@ import (
 const cookieName = "flowapp_session"
 const cookieTTL = 7 * 24 * time.Hour
 
-// sessionSecret is the HMAC key used to sign session cookies.
-// Loaded from SESSION_SECRET env var; falls back to a random ephemeral key on startup.
+// sessionSecret is the HMAC key used to sign session cookies and CSRF tokens.
+// On first run it is generated randomly and persisted to disk so it survives restarts.
+// Can be overridden via the SESSION_SECRET environment variable.
 var sessionSecret []byte
 
 func init() {
-	secret := os.Getenv("SESSION_SECRET")
-	if secret == "" {
-		// generate ephemeral secret — sessions won't survive restarts, fine for dev
-		b := make([]byte, 32)
-		rand.Read(b)
-		sessionSecret = b
-		log.Printf("[session] no SESSION_SECRET set — using ephemeral secret (sessions will not survive restarts)")
-	} else {
+	if secret := os.Getenv("SESSION_SECRET"); secret != "" {
 		sessionSecret = []byte(secret)
 		log.Printf("[session] using SESSION_SECRET from environment")
+		return
 	}
+	// try to load persisted secret
+	path, err := secretPath()
+	if err == nil {
+		if data, err := os.ReadFile(path); err == nil {
+			decoded, err := hex.DecodeString(strings.TrimSpace(string(data)))
+			if err == nil && len(decoded) == 32 {
+				sessionSecret = decoded
+				log.Printf("[session] loaded persisted session secret from %s", path)
+				return
+			}
+		}
+	}
+	// generate and persist a new secret
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		panic("failed to generate session secret: " + err.Error())
+	}
+	sessionSecret = b
+	if path != "" {
+		if err := os.MkdirAll(filepath.Dir(path), 0700); err == nil {
+			_ = os.WriteFile(path, []byte(hex.EncodeToString(b)), 0600)
+			log.Printf("[session] generated and persisted new session secret to %s", path)
+		}
+	} else {
+		log.Printf("[session] WARNING: could not persist session secret — sessions will not survive restarts")
+	}
+}
+
+// secretPath returns the path where the session secret is stored on disk.
+func secretPath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".config", "flowapp", "session-secret"), nil
 }
 
 // sessionPayload is the data stored inside each session cookie.

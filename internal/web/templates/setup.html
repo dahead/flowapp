@@ -16,6 +16,7 @@
   <div class="badge">👑 Admin-Account anlegen</div>
   {{if .Error}}<div class="error">{{.Error}}</div>{{end}}
   <form method="POST" action="/setup">
+                {{csrfField .CurrentUser}}
     <div class="field"><label>Name</label><input type="text" name="name" placeholder="Max Mustermann" autofocus required></div>
     <div class="field"><label>E-Mail</label><input type="email" name="email" placeholder="admin@firma.de" required></div>
     <div class="field"><label>Passwort</label><input type="password" name="password" placeholder="min. 8 Zeichen" required></div>

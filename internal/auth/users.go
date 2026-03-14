@@ -17,9 +17,10 @@ import (
 type Role string
 
 const (
-	RoleAdmin  Role = "admin"
-	RoleViewer Role = "viewer"
-	RoleUser   Role = "user"
+	RoleAdmin   Role = "admin"
+	RoleManager Role = "manager" // can delete and clone instances, plus all user rights
+	RoleViewer  Role = "viewer"
+	RoleUser    Role = "user"
 )
 
 // User represents an application user with authentication and role information.
@@ -35,10 +36,24 @@ type User struct {
 }
 
 // CanWrite returns true if the user may create or modify workflow instances.
-func (u *User) CanWrite() bool { return u.Role == RoleAdmin || u.Role == RoleUser }
+func (u *User) CanWrite() bool {
+	return u.Role == RoleAdmin || u.Role == RoleUser || u.Role == RoleManager
+}
 
 // CanAdmin returns true if the user has full administrative access.
 func (u *User) CanAdmin() bool { return u.Role == RoleAdmin }
+
+// CanDeleteInstance returns true if the user may permanently delete workflow instances.
+// Requires admin or manager role.
+func (u *User) CanDeleteInstance() bool {
+	return u.Role == RoleAdmin || u.Role == RoleManager
+}
+
+// CanCloneInstance returns true if the user may clone workflow instances.
+// Requires admin or manager role.
+func (u *User) CanCloneInstance() bool {
+	return u.Role == RoleAdmin || u.Role == RoleManager
+}
 
 // UserStore is an in-memory user registry backed by a JSON file.
 // All mutations are written through to disk immediately.

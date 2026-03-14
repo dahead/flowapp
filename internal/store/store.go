@@ -160,7 +160,7 @@ func (s *Store) loadDefinitions() error {
 			if _, dup := s.definitions[wf.Name]; !dup {
 				break
 			}
-			wf.Name = fmt.Sprintf("%s -%d", origName, i)
+			wf.Name = fmt.Sprintf("%s (copy %d)", origName, i)
 		}
 		if wf.Name != origName {
 			log.Printf("[store] WARNING: duplicate name '%s' in %s — renamed to '%s'", origName, e.Name(), wf.Name)

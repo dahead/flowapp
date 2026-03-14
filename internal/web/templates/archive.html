@@ -32,6 +32,7 @@
       <button class="user-menu-item" onclick="toggleTheme()">◐ Dark Mode</button>
       <div class="user-menu-sep"></div>
       <form method="POST" action="/logout" style="margin:0;">
+                {{csrfField .CurrentUser}}
         <button type="submit" class="user-menu-item danger">⏻ Logout</button>
       </form>
     </div>

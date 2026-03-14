@@ -33,6 +33,15 @@ const ctxUserKey ctxKey = "user"
 // and registering custom template functions used by the views.
 func New(s *store.Store, users *auth.UserStore, tmplGlob string) (*Handler, error) {
 	tmpl, err := template.New("").Funcs(template.FuncMap{
+		// csrfField renders a hidden CSRF input for the given user ID.
+		// Usage in templates: {{csrfField .CurrentUser}}
+		"csrfField": func(u *auth.User) template.HTML {
+			if u == nil {
+				return ""
+			}
+			token := auth.GenerateCSRFToken(u.ID)
+			return template.HTML(`<input type="hidden" name="` + auth.CSRFFieldName() + `" value="` + token + `">`)
+		},
 		"lower":               strings.ToLower,
 		"dueLabel":            func(s *engine.StepState) string { return s.DueLabel() },
 		"isOverdue":           func(s *engine.StepState) bool { return s.IsOverdue() },
@@ -91,6 +100,8 @@ func New(s *store.Store, users *auth.UserStore, tmplGlob string) (*Handler, erro
 			switch r {
 			case auth.RoleAdmin:
 				return "Admin"
+			case auth.RoleManager:
+				return "Manager"
 			case auth.RoleUser:
 				return "User"
 			case auth.RoleViewer:
@@ -99,6 +110,10 @@ func New(s *store.Store, users *auth.UserStore, tmplGlob string) (*Handler, erro
 			return string(r)
 		},
 		"isAdmin": func(u *auth.User) bool { return u != nil && u.CanAdmin() },
+		// canDeleteInstance returns true if the user may permanently delete instances.
+		"canDeleteInstance": func(u *auth.User) bool { return u != nil && u.CanDeleteInstance() },
+		// canCloneInstance returns true if the user may clone instances.
+		"canCloneInstance": func(u *auth.User) bool { return u != nil && u.CanCloneInstance() },
 		// initial returns the first rune of a string, used for avatar initials.
 		"initial": func(s string) string {
 			if len(s) == 0 {
@@ -202,6 +217,26 @@ func (h *Handler) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
 	})
 }
 
+// requireCSRF validates the CSRF token on POST requests for authenticated users.
+// Should wrap all state-changing POST handlers except /login, /setup, and /approve.
+func (h *Handler) requireCSRF(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		u := h.currentUser(r)
+		if u == nil {
+			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			return
+		}
+		r.ParseForm()
+		token := auth.CSRFTokenFromRequest(r)
+		if err := auth.ValidateCSRFToken(token, u.ID); err != nil {
+			log.Printf("[csrf] rejected request to %s: %v", r.URL.Path, err)
+			h.renderError(w, r, "Invalid or expired form token. Please go back and try again.", http.StatusForbidden)
+			return
+		}
+		next(w, r)
+	}
+}
+
 // ── Routes ────────────────────────────────────────────────────────────────────
 
 // RegisterRoutes registers all HTTP routes on the given mux.
@@ -212,41 +247,41 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	// authentication
 	mux.HandleFunc("GET /login", h.loginPage)
 	mux.HandleFunc("POST /login", h.loginSubmit)
-	mux.HandleFunc("POST /logout", h.logout)
+	mux.HandleFunc("POST /logout", h.requireCSRF(h.logout))
 	mux.HandleFunc("GET /profile", h.requireAuth(h.profilePage))
-	mux.HandleFunc("POST /profile", h.requireAuth(h.profileSave))
+	mux.HandleFunc("POST /profile", h.requireWrite(h.requireCSRF(h.profileSave)))
 	// main app (auth required)
 	mux.HandleFunc("GET /", h.requireAuth(h.board))
 	mux.HandleFunc("GET /builder", h.requireAuth(h.builder))
 	mux.HandleFunc("GET /archive", h.requireAuth(h.archive))
 	mux.HandleFunc("GET /instance/{id}", h.requireAuth(h.instanceDetail))
-	mux.HandleFunc("POST /instance", h.requireWrite(h.createInstance))
+	mux.HandleFunc("POST /instance", h.requireWrite(h.requireCSRF(h.createInstance)))
 	mux.HandleFunc("GET /instance/new/{workflow}", h.requireWrite(h.newInstancePrompt))
-	mux.HandleFunc("POST /instance/{id}/edit", h.requireWrite(h.editInstance))
-	mux.HandleFunc("POST /instance/{id}/step", h.requireWrite(h.advanceStep))
-	mux.HandleFunc("POST /instance/{id}/ask", h.requireWrite(h.answerAsk))
-	mux.HandleFunc("POST /instance/{id}/clone", h.requireWrite(h.cloneInstance))
-	mux.HandleFunc("POST /instance/{id}/comment", h.requireWrite(h.addComment))
-	mux.HandleFunc("POST /instance/{id}/stepcomment", h.requireWrite(h.addStepComment))
-	mux.HandleFunc("POST /instance/{id}/delete", h.requireWrite(h.deleteInstance))
-	mux.HandleFunc("POST /instance/{id}/archive", h.requireWrite(h.archiveInstance))
-	mux.HandleFunc("POST /instance/{id}/listitem/toggle", h.requireWrite(h.toggleListItem))
-	mux.HandleFunc("POST /instance/{id}/listitem/add", h.requireWrite(h.addListItem))
-	mux.HandleFunc("POST /instance/{id}/listitem/checkall", h.requireWrite(h.checkAllListItems))
-	mux.HandleFunc("POST /reorder", h.requireWrite(h.reorder))
+	mux.HandleFunc("POST /instance/{id}/edit", h.requireWrite(h.requireCSRF(h.editInstance)))
+	mux.HandleFunc("POST /instance/{id}/step", h.requireWrite(h.requireCSRF(h.advanceStep)))
+	mux.HandleFunc("POST /instance/{id}/ask", h.requireWrite(h.requireCSRF(h.answerAsk)))
+	mux.HandleFunc("POST /instance/{id}/clone", h.requireWrite(h.requireCSRF(h.cloneInstance)))
+	mux.HandleFunc("POST /instance/{id}/comment", h.requireWrite(h.requireCSRF(h.addComment)))
+	mux.HandleFunc("POST /instance/{id}/stepcomment", h.requireWrite(h.requireCSRF(h.addStepComment)))
+	mux.HandleFunc("POST /instance/{id}/delete", h.requireWrite(h.requireCSRF(h.deleteInstance)))
+	mux.HandleFunc("POST /instance/{id}/archive", h.requireWrite(h.requireCSRF(h.archiveInstance)))
+	mux.HandleFunc("POST /instance/{id}/listitem/toggle", h.requireWrite(h.requireCSRF(h.toggleListItem)))
+	mux.HandleFunc("POST /instance/{id}/listitem/add", h.requireWrite(h.requireCSRF(h.addListItem)))
+	mux.HandleFunc("POST /instance/{id}/listitem/checkall", h.requireWrite(h.requireCSRF(h.checkAllListItems)))
+	mux.HandleFunc("POST /reorder", h.requireWrite(h.requireCSRF(h.reorder)))
 	// static assets
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.Dir("internal/web/static"))))
 	// public API
 	mux.HandleFunc("GET /api/workflows", h.apiWorkflows)
-	// gate approval — no login required; the token is the credential
+	// gate approval — no login required; token is the credential; POST-only for submission
 	mux.HandleFunc("GET /approve/{token}", h.approvalPage)
 	mux.HandleFunc("POST /approve/{token}", h.approvalSubmit)
 	// admin
 	mux.HandleFunc("GET /admin/users", h.requireAdmin(h.adminUsers))
-	mux.HandleFunc("POST /admin/users", h.requireAdmin(h.adminCreateUser))
-	mux.HandleFunc("POST /admin/users/{id}/edit", h.requireAdmin(h.adminEditUser))
-	mux.HandleFunc("POST /admin/users/{id}/delete", h.requireAdmin(h.adminDeleteUser))
-	mux.HandleFunc("POST /admin/users/{id}/password", h.requireAdmin(h.adminResetPassword))
+	mux.HandleFunc("POST /admin/users", h.requireAdmin(h.requireCSRF(h.adminCreateUser)))
+	mux.HandleFunc("POST /admin/users/{id}/edit", h.requireAdmin(h.requireCSRF(h.adminEditUser)))
+	mux.HandleFunc("POST /admin/users/{id}/delete", h.requireAdmin(h.requireCSRF(h.adminDeleteUser)))
+	mux.HandleFunc("POST /admin/users/{id}/password", h.requireAdmin(h.requireCSRF(h.adminResetPassword)))
 }
 
 // ── Setup ─────────────────────────────────────────────────────────────────────
@@ -664,7 +699,13 @@ func (h *Handler) answerAsk(w http.ResponseWriter, r *http.Request) {
 }
 
 // cloneInstance creates a copy of an existing instance and redirects to it.
+// Requires admin or manager role.
 func (h *Handler) cloneInstance(w http.ResponseWriter, r *http.Request) {
+	u := h.currentUser(r)
+	if u == nil || !u.CanCloneInstance() {
+		h.renderError(w, r, "Keine Berechtigung zum Klonen von Instanzen.", http.StatusForbidden)
+		return
+	}
 	inst, err := h.store.CloneInstance(r.PathValue("id"))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -687,7 +728,13 @@ func (h *Handler) addComment(w http.ResponseWriter, r *http.Request) {
 }
 
 // deleteInstance permanently removes an instance and redirects to the board.
+// Requires admin or manager role.
 func (h *Handler) deleteInstance(w http.ResponseWriter, r *http.Request) {
+	u := h.currentUser(r)
+	if u == nil || !u.CanDeleteInstance() {
+		h.renderError(w, r, "Keine Berechtigung zum Löschen von Instanzen.", http.StatusForbidden)
+		return
+	}
 	h.store.DeleteInstance(r.PathValue("id"))
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
@@ -781,7 +828,14 @@ func (h *Handler) apiWorkflows(w http.ResponseWriter, r *http.Request) {
 
 // approvalPage renders the external approval page for a gate step.
 // No authentication is required; the token in the URL path is the credential.
+// If the request comes from an authenticated Viewer, they are redirected to login
+// since Viewers are not permitted to approve gate steps.
 func (h *Handler) approvalPage(w http.ResponseWriter, r *http.Request) {
+	// if a logged-in user visits the page, check they have write access
+	if u := h.currentUser(r); u != nil && !u.CanWrite() {
+		http.Redirect(w, r, "/login?next="+r.URL.RequestURI(), http.StatusSeeOther)
+		return
+	}
 	token := r.PathValue("token")
 	inst, step := h.store.FindByToken(token)
 	if inst == nil || step == nil {

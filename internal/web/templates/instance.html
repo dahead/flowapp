@@ -33,7 +33,7 @@
       {{if isAdmin .CurrentUser}}<a class="user-menu-item" href="/admin/users">👥 Benutzerverwaltung</a>{{end}}
       <button class="user-menu-item" onclick="toggleTheme()">◐ Dark Mode</button>
       <div class="user-menu-sep"></div>
-      <form method="POST" action="/logout" style="margin:0;">
+      <form method="POST" action="/logout" style="margin:0;">{{csrfField .CurrentUser}}
         <button type="submit" class="user-menu-item danger">⏻ Logout</button>
       </form>
     </div>
@@ -108,12 +108,14 @@
               <div class="checklist-header">
                 <span style="font-size:0.75rem;color:var(--text3);">{{len .ListItems}} items</span>
                 <form method="POST" action="/instance/{{$id}}/listitem/checkall">
+                {{csrfField $.CurrentUser}}
                   <input type="hidden" name="step" value="{{$step.Name}}">
                   <button type="submit" style="font-size:0.72rem;background:var(--bg4);color:#16a34a;border:none;border-radius:5px;padding:2px 8px;cursor:pointer;">✓ all</button>
                 </form>
               </div>
               {{range .ListItems}}
               <form class="check-form" method="POST" action="/instance/{{$id}}/listitem/toggle">
+                {{csrfField $.CurrentUser}}
                 <input type="hidden" name="step" value="{{$step.Name}}">
                 <input type="hidden" name="item_id" value="{{.ID}}">
                 <button type="submit" class="check-btn{{if .Checked}} checked{{end}}">
@@ -128,6 +130,7 @@
               {{if or (isReady .) (isAsk .) (isGate .)}}
               <button class="add-item-toggle" onclick="toggleAddItem(this)">＋ Add item</button>
               <form class="add-item-form" method="POST" action="/instance/{{$id}}/listitem/add" onsubmit="refocusAfterSubmit(this)">
+                {{csrfField $.CurrentUser}}
                 <input type="hidden" name="step" value="{{$step.Name}}">
                 <input type="text" name="text" placeholder="Item text…" onkeydown="if(event.key==='Enter'){event.preventDefault();this.closest('form').requestSubmit();}">
                 <button type="submit">Add</button>
@@ -138,6 +141,7 @@
             {{if and (isReady .) (canDoStep $.CurrentUser .)}}
             <div class="step-actions">
               <form method="POST" action="/instance/{{$id}}/step">
+                {{csrfField $.CurrentUser}}
                 <input type="hidden" name="step" value="{{.Name}}">
                 <button class="btn btn-complete" type="submit"
                   {{if requiredListBlocked .}}disabled title="Check required items first"{{end}}>
@@ -154,6 +158,7 @@
               <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
                 {{range $i, $target := .Ask.Targets}}
                 <form method="POST" action="/instance/{{$id}}/ask">
+                {{csrfField $.CurrentUser}}
                   <input type="hidden" name="step" value="{{$step.Name}}">
                   <input type="hidden" name="choice" value="{{$i}}">
                   <button class="btn btn-ask" type="submit">{{$target}}</button>
@@ -175,6 +180,7 @@
             {{end}}
             {{if and (canWrite $.CurrentUser) (not (isDone .)) (not (isSkipped .)) (not (isPending .))}}
             <form class="step-comment-form" method="POST" action="/instance/{{$id}}/stepcomment">
+                {{csrfField $.CurrentUser}}
               <input type="hidden" name="step" value="{{$step.Name}}">
               <input type="text" name="text" placeholder="💬 Step comment…" class="sc-input">
             </form>
@@ -191,15 +197,22 @@
       <div style="position:relative;">
         <button class="tool-btn" onclick="toggleToolMenu(this)">⚙ Actions ▾</button>
         <div class="tool-menu" id="toolMenu">
+          {{if canCloneInstance $.CurrentUser}}
           <form method="POST" action="/instance/{{.ID}}/clone">
+                {{csrfField $.CurrentUser}}
             <button type="submit" class="tool-menu-item">⎘ Clone as new</button>
           </form>
+          {{end}}
           <form method="POST" action="/instance/{{.ID}}/archive" onsubmit="return confirm('Archive this instance?')">
+                {{csrfField $.CurrentUser}}
             <button type="submit" class="tool-menu-item">📦 Archive</button>
           </form>
+          {{if canDeleteInstance $.CurrentUser}}
           <form method="POST" action="/instance/{{.ID}}/delete" onsubmit="return confirm('Permanently delete?')">
+                {{csrfField $.CurrentUser}}
             <button type="submit" class="tool-menu-item danger">🗑 Delete</button>
           </form>
+          {{end}}
         </div>
       </div>
     </div>
@@ -209,6 +222,7 @@
     <div class="sidebar-box">
       <h3>Properties</h3>
       <form method="POST" action="/instance/{{.ID}}/edit" class="props-form">
+                {{csrfField $.CurrentUser}}
         <div class="props-row"><label>Name</label>
           <input type="text" name="title" value="{{.Title}}"></div>
         <div class="props-row"><label>Priority</label>
@@ -254,6 +268,7 @@
       {{end}}
       {{if ne (print .Status) "done"}}
       <form class="comment-form" method="POST" action="/instance/{{.ID}}/comment">
+                {{csrfField $.CurrentUser}}
         <textarea name="text" placeholder="Add a comment… (max 255)" maxlength="255"></textarea>
         <button type="submit">Send</button>
       </form>

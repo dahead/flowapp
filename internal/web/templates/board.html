@@ -14,6 +14,7 @@
   <h1>Flow<span>App</span></h1>
   {{if canWrite .CurrentUser}}
   <form class="new-form" id="newInstForm" method="POST" action="/instance" onsubmit="return checkVarsRedirect(this)">
+                {{csrfField .CurrentUser}}
     <select name="workflow" id="wfSelect" required>
       <option value="" disabled selected>Workflow…</option>
       {{range .Definitions}}<option value="{{.}}">{{.}}</option>{{end}}
@@ -53,6 +54,7 @@
       <button class="user-menu-item" onclick="toggleTheme()">◐ Dark Mode</button>
       <div class="user-menu-sep"></div>
       <form method="POST" action="/logout" style="margin:0;">
+                {{csrfField .CurrentUser}}
         <button type="submit" class="user-menu-item danger">⏻ Logout</button>
       </form>
     </div>
