@@ -79,7 +79,6 @@ func (s *Store) watchWorkflows() {
 	}
 }
 
-// Loads the workflow definitions from the workflow directory
 func (s *Store) loadDefinitions() error {
 	entries, err := os.ReadDir(s.workflowDir)
 	if err != nil {
@@ -103,7 +102,7 @@ func (s *Store) loadDefinitions() error {
 			if _, dup := s.definitions[wf.Name]; !dup {
 				break
 			}
-			wf.Name = fmt.Sprintf("%s-%d", origName, i)
+			wf.Name = fmt.Sprintf("%s -%d", origName, i)
 		}
 		if wf.Name != origName {
 			log.Printf("[store] WARNING: duplicate name '%s' in %s — renamed to '%s'", origName, e.Name(), wf.Name)
@@ -120,7 +119,7 @@ func (s *Store) loadInstances() error {
 		return err
 	}
 	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") || e.Name() == "users.json" {
 			continue
 		}
 		data, err := os.ReadFile(filepath.Join(s.dataDir, e.Name()))
@@ -354,7 +353,9 @@ func (s *Store) AddComment(id, text string) error {
 	if !ok {
 		return fmt.Errorf("instance not found")
 	}
-	inst.AddComment(text)
+	if err := inst.AddComment(text); err != nil {
+		return err
+	}
 	return s.save(inst)
 }
 

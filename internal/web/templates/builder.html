@@ -96,6 +96,11 @@ header h1 span { color: var(--accent); }
 .gate-btn.on { color: #f59e0b; border-color: #f59e0b; background: #fffbeb; }
 [data-theme="dark"] .gate-btn.on { background: #2a1f00; }
 /* preview */
+.load-btn { padding: 0.38rem 0.9rem; background: var(--inp-bg); color: #aaa; border: 1px solid var(--inp-border); border-radius: 7px; cursor: pointer; font-size: 0.88rem; }
+.load-btn:hover { color: white; }
+#fileInput { display: none; }
+.canvas-wrap.dragover { background: var(--dz-hover); }
+.canvas-wrap.dragover .empty { border-color: var(--dz-border); color: var(--accent); }
 .preview-wrap { flex-shrink: 0; background: var(--preview-bg); color: #e0e0e0; font-family: monospace; font-size: 0.82rem; max-height: 0; overflow: hidden; transition: max-height 0.3s; border-top: 1px solid #2a2a40; }
 .preview-wrap.open { max-height: 200px; overflow-y: auto; }
 .preview-wrap pre { padding: 1rem 1.5rem; white-space: pre-wrap; }
@@ -117,6 +122,8 @@ header h1 span { color: var(--accent); }
     <div class="hg"><label>Labels</label><input id="wfLabels" type="text" placeholder="finance, hr" style="width:140px;"></div>
   </div>
   <button class="theme-btn" onclick="toggleTheme()">◐</button>
+  <button class="load-btn" title="Load .workflow file" onclick="document.getElementById('fileInput').click()">📂 Load</button>
+  <input type="file" id="fileInput" accept=".workflow,.txt" style="display:none" onchange="loadFile(this)">
   <button class="btn-pre" onclick="togglePreview()">{ } Preview</button>
   <button class="btn-dl"  onclick="download()">⬇ Download</button>
 </header>
@@ -124,7 +131,7 @@ header h1 span { color: var(--accent); }
 <div class="preview-wrap" id="previewWrap"><pre id="previewCode"></pre></div>
 
 <div class="main">
-  <div class="canvas-wrap">
+  <div class="canvas-wrap" id="canvasWrap">
     <div class="canvas">
       <div class="empty" id="canvasEmpty"><span>📋</span>Drag elements from the right panel<br>to start building your workflow</div>
       <div id="nodeList"></div>
@@ -209,9 +216,7 @@ document.addEventListener('keydown', e => {
 function mkGhost(label, x, y) {
   const g = document.createElement('div');
   g.id = 'dragGhost';
-  g.style.cssText = `position:fixed;pointer-events:none;z-index:9999;background:var(--accent);color:white;
-    padding:5px 12px;border-radius:7px;font-size:0.83rem;font-weight:600;
-    box-shadow:0 4px 16px rgba(108,99,255,0.35);transform:translate(-50%,-50%);left:${x}px;top:${y}px;`;
+  g.style.cssText = 'position:fixed;pointer-events:none;z-index:9999;background:var(--accent);color:white;padding:5px 12px;border-radius:7px;font-size:0.83rem;font-weight:600;box-shadow:0 4px 16px rgba(108,99,255,0.35);transform:translate(-50%,-50%);left:'+x+'px;top:'+y+'px;';
   g.textContent = label;
   document.body.appendChild(g);
   return g;
@@ -292,38 +297,33 @@ function mkDZ(afterIdx) {
   return dz;
 }
 
-// ── Code generation ──
+// ── Code generation (no template literals to avoid Go template conflicts) ──
+function q(s) { return '"' + s + '"'; }
 function generate() {
-  const name = document.getElementById('wfName').value.trim() || 'My Workflow';
-  const priority = document.getElementById('wfPriority').value;
-  const labels = document.getElementById('wfLabels').value.trim();
-  const lines = [];
-  lines.push(`workflow "${name}"`);
-  lines.push(`priority ${priority}`);
-  if (labels) labels.split(',').map(l=>l.trim()).filter(Boolean).forEach(l=>lines.push(`label ${l}`));
+  var name     = document.getElementById('wfName').value.trim() || 'My Workflow';
+  var priority = document.getElementById('wfPriority').value;
+  var labels   = document.getElementById('wfLabels').value.trim();
+  var lines = [];
+  lines.push('workflow ' + q(name));
+  lines.push('priority ' + priority);
+  if (labels) labels.split(',').forEach(function(l){ l=l.trim(); if(l) lines.push('label ' + l); });
 
-  nodes.forEach(n => {
-    const v = (n.value||'').trim();
+  nodes.forEach(function(n) {
+    var v = (n.value||'').trim();
     switch(n.type) {
-      case 'section': lines.push(''); lines.push(`section "${v||'Section'}"`); break;
-      case 'step':    lines.push(`  step "${v||'Step'}"`); break;
-      case 'note':    lines.push(`  note "${v}"`); break;
-      case 'due':     lines.push(`  due ${v||'1d'}`); break;
-      case 'notify':  lines.push(`  notify "${v}"`); break;
-      case 'needs':   lines.push(`  needs ${v||'"Step Name"'}`); break;
-      case 'list':    lines.push(`  list "${v}"${n.required===false?' optional':''}`); break;
-      case 'ask': {
-        // parse: question -> targets (user types full: "Q?" -> "A", "B")
-        // or just the question, we output as-is
-        if (v.includes('->')) {
-          lines.push(`  ask ${v}`);
-        } else {
-          lines.push(`  ask "${v||'Question?'}" -> "Option A", "Option B"`);
-        }
+      case 'section': lines.push(''); lines.push('section ' + q(v||'Section')); break;
+      case 'step':    lines.push('  step '   + q(v||'Step')); break;
+      case 'note':    lines.push('  note '   + q(v)); break;
+      case 'due':     lines.push('  due '    + (v||'1d')); break;
+      case 'notify':  lines.push('  notify ' + q(v)); break;
+      case 'needs':   lines.push('  needs '  + (v||q('Step Name'))); break;
+      case 'list':    lines.push('  list '   + q(v) + (n.required===false?' optional':'')); break;
+      case 'ask':
+        if (v.indexOf('->') >= 0) lines.push('  ask ' + v);
+        else lines.push('  ask ' + q(v||'Question?') + ' -> "Option A", "Option B"');
         break;
-      }
-      case 'gate':    lines.push(`  gate`); break;
-      case 'ends':    lines.push(`  ends`); break;
+      case 'gate':    lines.push('  gate'); break;
+      case 'ends':    lines.push('  ends'); break;
     }
   });
   return lines.join('\n');
@@ -357,10 +357,102 @@ function toggleTheme() {
   localStorage.setItem('theme', next);
 }
 
+// ── DSL Parser (client-side) ──
+function parseWorkflow(text) {
+  nodes = [];
+  nodeCounter = 0;
+  let labels = [];
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || line.startsWith('#')) continue;
+    const spaceIdx = line.indexOf(' ');
+    const kw = spaceIdx >= 0 ? line.slice(0, spaceIdx).toLowerCase() : line.toLowerCase();
+    const rest = spaceIdx >= 0 ? line.slice(spaceIdx + 1).trim() : '';
+    const unquote = s => s.replace(/^"|"$/g, '').trim();
+
+    switch (kw) {
+      case 'workflow':
+        document.getElementById('wfName').value = unquote(rest); break;
+      case 'priority':
+        document.getElementById('wfPriority').value = rest.toLowerCase(); break;
+      case 'label':
+        labels.push(rest.toLowerCase()); break;
+      case 'section':
+        nodes.push({ id: ++nodeCounter, type: 'section', value: unquote(rest) }); break;
+      case 'step':
+        nodes.push({ id: ++nodeCounter, type: 'step', value: unquote(rest) }); break;
+      case 'note':
+        nodes.push({ id: ++nodeCounter, type: 'note', value: unquote(rest) }); break;
+      case 'due':
+        nodes.push({ id: ++nodeCounter, type: 'due', value: rest }); break;
+      case 'notify':
+        nodes.push({ id: ++nodeCounter, type: 'notify', value: unquote(rest) }); break;
+      case 'needs':
+        nodes.push({ id: ++nodeCounter, type: 'needs', value: rest }); break;
+      case 'list': {
+        const req = !rest.toLowerCase().endsWith(' optional');
+        const text = req
+          ? (rest.toLowerCase().endsWith(' required') ? rest.slice(0, -9).trim() : rest)
+          : rest.slice(0, -9).trim();
+        nodes.push({ id: ++nodeCounter, type: 'list', value: unquote(text), required: req }); break;
+      }
+      case 'ask':
+        nodes.push({ id: ++nodeCounter, type: 'ask', value: rest }); break;
+      case 'gate':
+        nodes.push({ id: ++nodeCounter, type: 'gate', value: '' }); break;
+      case 'ends':
+        nodes.push({ id: ++nodeCounter, type: 'ends', value: '' }); break;
+    }
+  }
+  document.getElementById('wfLabels').value = labels.join(', ');
+  render();
+}
+
+function loadFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => parseWorkflow(e.target.result);
+  reader.readAsText(file);
+  input.value = ''; // reset so same file can be reloaded
+}
+
+// File drag/drop — attached via JS to avoid conflicts with node DnD
+function initFileDrop() {
+  const wrap = document.getElementById('canvasWrap');
+  wrap.addEventListener('dragenter', e => {
+    if (e.dataTransfer.types.includes('Files')) {
+      e.preventDefault();
+      wrap.classList.add('dragover');
+    }
+  });
+  wrap.addEventListener('dragover', e => {
+    if (e.dataTransfer.types.includes('Files')) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+    }
+  });
+  wrap.addEventListener('dragleave', e => {
+    if (!wrap.contains(e.relatedTarget)) wrap.classList.remove('dragover');
+  });
+  wrap.addEventListener('drop', e => {
+    wrap.classList.remove('dragover');
+    if (!e.dataTransfer.files.length) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => parseWorkflow(ev.target.result);
+    reader.readAsText(file);
+  });
+}
+
 ['wfName','wfPriority','wfLabels'].forEach(id =>
   document.getElementById(id).addEventListener('input', updatePreview));
 
 render();
+initFileDrop();
 </script>
 </body>
 </html>
