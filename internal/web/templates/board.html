@@ -474,8 +474,7 @@ let _workflows = [];
 fetch('/api/workflows')
   .then(function(r) { return r.json(); })
   .then(function(data) { _workflows = data; })
-  .catch(function(e) { console.warn('Could not load workflow metadata', e); });
-
+  .catch(function(e) {
 function checkVarsRedirect(form) {
   var wfName = document.getElementById('wfSelect').value;
   var wf = _workflows.find(function(w) { return w.name === wfName; });

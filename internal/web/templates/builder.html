@@ -153,7 +153,6 @@ function render() {
 function mkNode(node, idx) {
   const def = DEF[node.type];
   if (!def) {
-    console.warn('[builder] unknown node type:', node.type, node);
     return document.createElement('div');
   }
   const div = document.createElement('div');
@@ -317,7 +316,6 @@ function parseWorkflow(text) {
     }
   }
   document.getElementById('wfLabels').value = labels.join(', ');
-  console.log('[parser] nodes after parse:', JSON.stringify(nodes.slice(0,5)));
   render();
 }
 
