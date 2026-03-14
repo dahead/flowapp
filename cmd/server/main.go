@@ -1,12 +1,13 @@
 package main
 
 import (
-	"os"
 	"flowapp/internal/auth"
+	"flowapp/internal/mailer"
 	"flowapp/internal/store"
 	"flowapp/internal/web"
 	"log"
 	"net/http"
+	"os"
 )
 
 func main() {
@@ -21,6 +22,17 @@ func main() {
 	s, err := store.New("workflows", "data")
 	if err != nil {
 		log.Fatal("store:", err)
+	}
+
+	if cfg, err := mailer.LoadConfig(); err == nil {
+		if m, err := mailer.NewMailerFromConfig(cfg); err == nil {
+			s.SetMailer(mailer.EngineAdapter{M: m, From: cfg.From}, users.ResolveEmails)
+			log.Println("[main] mailer configured:", cfg.Type)
+		} else {
+			log.Println("[main] mailer init failed:", err)
+		}
+	} else {
+		log.Println("[main] no mail config found — notifications are log-only")
 	}
 
 	h, err := web.New(s, users, "internal/web/templates/*.html")

@@ -21,6 +21,9 @@ type Store struct {
 	workflowDir string
 	definitions map[string]*dsl.Workflow
 	instances   map[string]*engine.Instance
+
+	mailer        engine.Mailer
+	emailResolver engine.EmailResolver
 }
 
 func New(workflowDir, dataDir string) (*Store, error) {
@@ -44,6 +47,18 @@ func New(workflowDir, dataDir string) (*Store, error) {
 	return s, nil
 }
 
+// SetMailer configures the mailer and email resolver used for notifications.
+func (s *Store) SetMailer(m engine.Mailer, r engine.EmailResolver) {
+	s.mailer = m
+	s.emailResolver = r
+}
+
+// inject sets runtime-only fields on an instance before engine calls.
+func (s *Store) inject(inst *engine.Instance) {
+	inst.MailSender = s.mailer
+	inst.EmailResolver = s.emailResolver
+}
+
 // runScheduler ticks every minute and activates scheduled steps.
 func (s *Store) runScheduler() {
 	ticker := time.NewTicker(time.Minute)
@@ -54,6 +69,7 @@ func (s *Store) runScheduler() {
 			if inst.Status == engine.StatusDone {
 				continue
 			}
+			s.inject(inst)
 			if inst.TickScheduled() {
 				if err := s.save(inst); err != nil {
 					log.Printf("[scheduler] save error for %s: %v", inst.ID, err)
@@ -207,7 +223,7 @@ func (s *Store) CreateInstance(workflowName, title, priority string) (*engine.In
 		wfCopy.Priority = priority
 	}
 	id := fmt.Sprintf("%d", time.Now().UnixNano())
-	inst := engine.NewInstance(id, title, &wfCopy)
+	inst := engine.NewInstance(id, title, &wfCopy, s.mailer, s.emailResolver)
 	s.instances[id] = inst
 	log.Printf("[store] created instance %s — '%s' (%s)", id, title, workflowName)
 	return inst, s.save(inst)
@@ -227,7 +243,7 @@ func (s *Store) CloneInstance(id string) (*engine.Instance, error) {
 	wfCopy := *wf
 	wfCopy.Priority = src.Priority
 	newID := fmt.Sprintf("%d", time.Now().UnixNano())
-	inst := engine.NewInstance(newID, src.Title+" (copy)", &wfCopy)
+	inst := engine.NewInstance(newID, src.Title+" (copy)", &wfCopy, s.mailer, s.emailResolver)
 	s.instances[newID] = inst
 	log.Printf("[store] cloned instance %s → %s ('%s')", id, newID, inst.Title)
 	return inst, s.save(inst)
@@ -282,6 +298,7 @@ func (s *Store) AdvanceStep(id, stepName string) error {
 	if !ok {
 		return fmt.Errorf("instance not found")
 	}
+	s.inject(inst)
 	if err := inst.AdvanceStep(stepName); err != nil {
 		return err
 	}
@@ -295,6 +312,7 @@ func (s *Store) AnswerAsk(id, stepName string, chosenIdx int) error {
 	if !ok {
 		return fmt.Errorf("instance not found")
 	}
+	s.inject(inst)
 	if err := inst.AnswerAsk(stepName, chosenIdx); err != nil {
 		return err
 	}
@@ -314,6 +332,7 @@ func (s *Store) RedeemGate(token string, chosenIdx int) (*engine.Instance, *engi
 	if targetInst == nil {
 		return nil, nil, fmt.Errorf("token not found")
 	}
+	s.inject(targetInst)
 	step, err := targetInst.RedeemGate(token, chosenIdx)
 	if err != nil {
 		return nil, nil, err

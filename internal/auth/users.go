@@ -8,6 +8,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"log"
 	"os"
+	"strings"
 	"sync"
 	"time"
 )
@@ -215,6 +216,46 @@ func (s *UserStore) Delete(id string) error {
 	}
 	log.Printf("[auth] deleted user %s (%s)", id, u.Email)
 	return nil
+}
+
+// ResolveEmails resolves an assign expression to a list of email addresses.
+// Formats: "user:<email>", "user:<name>", "role:<app_role>", or bare email.
+func (s *UserStore) ResolveEmails(expr string) []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	expr = strings.TrimSpace(expr)
+	if strings.HasPrefix(expr, "user:") {
+		val := strings.TrimPrefix(expr, "user:")
+		// try email first
+		if u, ok := s.byEmail[val]; ok && u.Active {
+			return []string{u.Email}
+		}
+		// fallback: match by name (case-insensitive)
+		for _, u := range s.users {
+			if u.Active && strings.EqualFold(u.Name, val) {
+				return []string{u.Email}
+			}
+		}
+		return nil
+	}
+	if strings.HasPrefix(expr, "role:") {
+		role := strings.TrimPrefix(expr, "role:")
+		var emails []string
+		for _, u := range s.users {
+			if !u.Active {
+				continue
+			}
+			for _, r := range u.AppRoles {
+				if r == role {
+					emails = append(emails, u.Email)
+					break
+				}
+			}
+		}
+		return emails
+	}
+	// bare email
+	return []string{expr}
 }
 
 func newID() string {

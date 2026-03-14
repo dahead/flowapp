@@ -6,7 +6,6 @@ import (
 	"flowapp/internal/dsl"
 	"fmt"
 	"log"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -65,6 +64,10 @@ type Instance struct {
 	Vars         map[string]string `json:"vars,omitempty"`
 	Comments     []Comment         `json:"comments,omitempty"`
 	Audit        []AuditEntry      `json:"audit,omitempty"`
+
+	// Runtime-only (not persisted)
+	MailSender    Mailer        `json:"-"`
+	EmailResolver EmailResolver `json:"-"`
 }
 
 type SectionState struct {
@@ -92,7 +95,7 @@ type StepState struct {
 	GateToken  string     `json:"gate_token,omitempty"`
 	GateUsed   bool       `json:"gate_used,omitempty"`
 	Ends       bool       `json:"ends,omitempty"`
-	ChosenIdx  int        `json:"chosen_idx,omitempty"` // which ask target was chosen
+	ChosenIdx  int        `json:"chosen_idx"` // which ask target was chosen; -1 = not yet chosen
 }
 
 // --- Schedule ---
@@ -224,13 +227,14 @@ func generateToken() string {
 
 // --- Instance ---
 
-func NewInstance(id, title string, wf *dsl.Workflow) *Instance {
+func NewInstance(id, title string, wf *dsl.Workflow, m Mailer, r EmailResolver) *Instance {
 	now := time.Now()
 	inst := &Instance{
 		ID: id, WorkflowName: wf.Name, Title: title,
 		Labels: wf.Labels, Priority: wf.Priority,
 		CreatedAt: now, UpdatedAt: now, Status: StatusReady,
-		Vars: make(map[string]string),
+		Vars:       make(map[string]string),
+		MailSender: m, EmailResolver: r,
 	}
 	if inst.Priority == "" {
 		inst.Priority = "medium"
@@ -264,7 +268,7 @@ func NewInstance(id, title string, wf *dsl.Workflow) *Instance {
 				Name: step.Name, Note: step.Note, Notify: step.Notify, Assign: step.Assign,
 				Schedule: step.Schedule, Due: step.Due, Needs: needs,
 				Ask: askSt, Gate: step.Gate, Ends: step.Ends,
-				Status: StatusPending,
+				Status: StatusPending, ChosenIdx: -1,
 			}
 			setScheduleAt(st, now)
 			for i, li := range step.ListItems {
@@ -377,10 +381,14 @@ func (inst *Instance) activate(s *StepState, now time.Time) {
 	s.UpdatedAt = now
 	setDueAt(s, now)
 	if s.Notify != "" && s.Gate {
-		fireNotify(inst, s) // send gate link on activation
+		m, r := inst.MailSender, inst.EmailResolver
+		scopy := *s
+		go fireNotify(inst, &scopy, m, r) // send gate link on activation
 	}
 	if s.Assign != "" {
-		fireAssignNotify(inst, s) // notify assignee
+		m, r := inst.MailSender, inst.EmailResolver
+		scopy := *s
+		go fireAssignNotify(inst, &scopy, m, r) // notify assignee
 	}
 }
 
@@ -463,7 +471,14 @@ func (inst *Instance) RedeemGate(token string, chosenIdx int) (*StepState, error
 	if found.DueAt != nil && time.Now().After(*found.DueAt) {
 		return nil, fmt.Errorf("approval link has expired")
 	}
-	if found.Ask == nil || chosenIdx < 0 || chosenIdx >= len(found.Ask.Targets) {
+	if found.Ask == nil {
+		// simple gate: no routing, just complete
+		inst.audit("gate", found.Name, "approved (token)")
+		found.GateUsed = true
+		err := inst.completeStep(found, now)
+		return found, err
+	}
+	if chosenIdx < 0 || chosenIdx >= len(found.Ask.Targets) {
 		return nil, fmt.Errorf("invalid choice index %d", chosenIdx)
 	}
 	found.ChosenIdx = chosenIdx
@@ -492,7 +507,9 @@ func (inst *Instance) completeStep(s *StepState, now time.Time) error {
 	s.Status = StatusDone
 	s.UpdatedAt = now
 	if s.Notify != "" && !s.Gate { // gate already fired on activation
-		fireNotify(inst, s)
+		m, r := inst.MailSender, inst.EmailResolver
+		scopy := *s
+		go fireNotify(inst, &scopy, m, r)
 	}
 	if s.Ends {
 		s.Status = StatusEnded
@@ -674,30 +691,79 @@ func filterNeeds(needs []string) []string {
 	return out
 }
 
-func fireAssignNotify(inst *Instance, step *StepState) {
-	msg := fmt.Sprintf("[%s] ASSIGN → %s | instance: %s (%s) | step: %s\n",
+// EmailResolver maps an assign/notify expression to a list of email addresses.
+type EmailResolver func(expr string) []string
+
+// Mailer sends an email message. Matches mailer.Mailer interface.
+type Mailer interface {
+	Send(msg MailMessage) error
+}
+
+// MailMessage mirrors mailer.Message to avoid an import cycle.
+type MailMessage struct {
+	From      string
+	To        []string
+	Subject   string
+	PlainBody string
+	HTMLBody  string
+}
+
+func fireAssignNotify(inst *Instance, step *StepState, m Mailer, resolve EmailResolver) {
+	logLine := fmt.Sprintf("[%s] ASSIGN → %s | instance: %s (%s) | step: %s",
 		time.Now().Format(time.RFC3339), step.Assign,
 		inst.Title, inst.WorkflowName, step.Name)
-	log.Print(msg)
-	f, err := os.OpenFile("notifications.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err == nil {
-		defer f.Close()
-		f.WriteString(msg)
+	log.Println(logLine)
+
+	if m == nil || resolve == nil {
+		return
+	}
+	to := resolve(step.Assign)
+	if len(to) == 0 {
+		log.Printf("[engine] assign: no emails resolved for %q", step.Assign)
+		return
+	}
+	subject := fmt.Sprintf("[flowapp] Assigned to you: %s — %s", step.Name, inst.Title)
+	plain := fmt.Sprintf("You have been assigned to step %q in workflow %q.\n\nInstance: %s\nWorkflow: %s\nStep: %s\n",
+		step.Name, inst.WorkflowName, inst.Title, inst.WorkflowName, step.Name)
+	if step.Due != "" {
+		plain += fmt.Sprintf("Due: %s\n", step.Due)
+	}
+	if err := m.Send(MailMessage{To: to, Subject: subject, PlainBody: plain}); err != nil {
+		log.Printf("[engine] assign mail error: %v", err)
 	}
 }
 
-func fireNotify(inst *Instance, step *StepState) {
-	gateInfo := ""
+func fireNotify(inst *Instance, step *StepState, m Mailer, resolve EmailResolver) {
+	gateURL := ""
 	if step.Gate && step.GateToken != "" {
-		gateInfo = fmt.Sprintf(" | approval link: /approve/%s", step.GateToken)
+		gateURL = fmt.Sprintf("/approve/%s", step.GateToken)
 	}
-	msg := fmt.Sprintf("[%s] NOTIFY → %s | instance: %s (%s) | step: %s%s\n",
+	logLine := fmt.Sprintf("[%s] NOTIFY → %s | instance: %s (%s) | step: %s",
 		time.Now().Format(time.RFC3339), step.Notify,
-		inst.Title, inst.WorkflowName, step.Name, gateInfo)
-	log.Print(msg)
-	f, err := os.OpenFile("notifications.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err == nil {
-		defer f.Close()
-		f.WriteString(msg)
+		inst.Title, inst.WorkflowName, step.Name)
+	if gateURL != "" {
+		logLine += " | approval link: " + gateURL
+	}
+	log.Println(logLine)
+
+	if m == nil || resolve == nil {
+		return
+	}
+	to := resolve(step.Notify)
+	if len(to) == 0 {
+		log.Printf("[engine] notify: no emails resolved for %q", step.Notify)
+		return
+	}
+	subject := fmt.Sprintf("[flowapp] %s — step %q ready", inst.Title, step.Name)
+	plain := fmt.Sprintf("Step %q is ready in workflow %q.\n\nInstance: %s\nWorkflow: %s\n",
+		step.Name, inst.WorkflowName, inst.Title, inst.WorkflowName)
+	if gateURL != "" {
+		plain += fmt.Sprintf("\nApproval link: %s\n", gateURL)
+	}
+	if step.Due != "" {
+		plain += fmt.Sprintf("Due: %s\n", step.Due)
+	}
+	if err := m.Send(MailMessage{To: to, Subject: subject, PlainBody: plain}); err != nil {
+		log.Printf("[engine] notify mail error: %v", err)
 	}
 }

@@ -63,12 +63,8 @@ func buildMIME(msg Message) ([]byte, error) {
 	buf.WriteString("Subject: " + mime.QEncoding.Encode("utf-8", msg.Subject) + "\r\n")
 	buf.WriteString("MIME-Version: 1.0\r\n")
 
-	mixed := multipart.NewWriter(&buf)
-
-	if len(msg.Attachments) > 0 {
-		buf.WriteString("Content-Type: multipart/mixed; boundary=" + mixed.Boundary() + "\r\n\r\n")
-	} else {
-		// No attachments: use multipart/alternative directly
+	if len(msg.Attachments) == 0 {
+		// No attachments: multipart/alternative directly
 		alt := multipart.NewWriter(&buf)
 		buf.WriteString("Content-Type: multipart/alternative; boundary=" + alt.Boundary() + "\r\n\r\n")
 		if err := writeAlternativeParts(alt, msg); err != nil {
@@ -78,32 +74,25 @@ func buildMIME(msg Message) ([]byte, error) {
 		return buf.Bytes(), nil
 	}
 
-	// multipart/mixed wrapper
+	// With attachments: multipart/mixed wrapping multipart/alternative + attachments
+	mixed := multipart.NewWriter(&buf)
 	buf.WriteString("Content-Type: multipart/mixed; boundary=" + mixed.Boundary() + "\r\n\r\n")
 
 	// Body part: multipart/alternative inside mixed
+	var altBuf bytes.Buffer
+	alt := multipart.NewWriter(&altBuf)
+	if err := writeAlternativeParts(alt, msg); err != nil {
+		return nil, err
+	}
+	alt.Close()
+
 	altHeader := textproto.MIMEHeader{}
-	altWriter := multipart.NewWriter(nil) // just to get a boundary
-	altWriter = multipart.NewWriter(&bytes.Buffer{})
-	altHeader.Set("Content-Type", "multipart/alternative; boundary="+altWriter.Boundary())
+	altHeader.Set("Content-Type", "multipart/alternative; boundary="+alt.Boundary())
 	altPart, err := mixed.CreatePart(altHeader)
 	if err != nil {
 		return nil, err
 	}
-	altBuf := &writerBuffer{Writer: altPart}
-	alt := multipart.NewWriter(altBuf)
-	// reuse same boundary trick: write directly
-	fmt.Fprintf(altPart, "--%s\r\n", alt.Boundary())
-	_ = alt // we'll write manually for cleaner control
-
-	// Easier: write the alternative block inline
-	var bodyBuf bytes.Buffer
-	altInner := multipart.NewWriter(&bodyBuf)
-	if err := writeAlternativeParts(altInner, msg); err != nil {
-		return nil, err
-	}
-	altInner.Close()
-	altPart.Write(bodyBuf.Bytes())
+	altPart.Write(altBuf.Bytes())
 
 	// Attachments
 	for _, path := range msg.Attachments {
@@ -166,14 +155,4 @@ func writeAttachment(w *multipart.Writer, path string) error {
 	}
 	part.Write([]byte(encoded + "\r\n"))
 	return nil
-}
-
-// writerBuffer wraps an io.Writer to satisfy io.Writer for multipart.NewWriter.
-type writerBuffer struct {
-	bytes.Buffer
-	Writer interface{ Write([]byte) (int, error) }
-}
-
-func (w *writerBuffer) Write(p []byte) (int, error) {
-	return w.Writer.Write(p)
 }

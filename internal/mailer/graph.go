@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // GraphMailer sends mail via Microsoft Graph API (v1.0).
@@ -21,6 +22,10 @@ type GraphMailer struct {
 	ClientSecret string
 	// SenderUPN is the UPN/email of the mailbox to send from (e.g. "workflow@example.com")
 	SenderUPN string
+
+	// token cache
+	cachedToken    string
+	tokenExpiresAt time.Time
 }
 
 func NewGraphMailer(tenantID, clientID, clientSecret, senderUPN string) *GraphMailer {
@@ -49,6 +54,9 @@ func (g *GraphMailer) Send(msg Message) error {
 
 // getToken fetches an access token via client credentials grant.
 func (g *GraphMailer) getToken() (string, error) {
+	if g.cachedToken != "" && time.Now().Before(g.tokenExpiresAt) {
+		return g.cachedToken, nil
+	}
 	log.Printf("[mailer/graph] fetching OAuth2 token for tenant %s", g.TenantID)
 	url := fmt.Sprintf("https://login.microsoftonline.com/%s/oauth2/v2.0/token", g.TenantID)
 	body := fmt.Sprintf(
@@ -72,8 +80,10 @@ func (g *GraphMailer) getToken() (string, error) {
 		log.Printf("[mailer/graph] token error: %s: %s", result.Error, result.Description)
 		return "", fmt.Errorf("%s: %s", result.Error, result.Description)
 	}
+	g.cachedToken = result.AccessToken
+	g.tokenExpiresAt = time.Now().Add(55 * time.Minute)
 	log.Printf("[mailer/graph] token acquired successfully")
-	return result.AccessToken, nil
+	return g.cachedToken, nil
 }
 
 // Graph API message payload types
