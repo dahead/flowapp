@@ -124,7 +124,7 @@ func New(s *store.Store, users *auth.UserStore, tmplGlob string) (*Handler, erro
 				return true
 			}
 			// match user:<name> or email or name
-			if s.Assign == "user:"+u.Name || s.Assign == u.Name || s.Assign == u.Email {
+			if s.Assign == "user:"+u.Name || s.Assign == "user:"+u.Email || s.Assign == u.Name || s.Assign == u.Email {
 				return true
 			}
 			// match role:<rolename>
@@ -943,7 +943,7 @@ func matchAssignFilter(inst *engine.Instance, filter string, u *auth.User) bool 
 				continue
 			}
 			if filter == "me" && u != nil {
-				if s.Assign == "user:"+u.Name || s.Assign == u.Name || s.Assign == u.Email {
+				if s.Assign == "user:"+u.Name || s.Assign == "user:"+u.Email || s.Assign == u.Name || s.Assign == u.Email {
 					return true
 				}
 				// match via app_roles: step assign="role:hr" and user has "hr" in AppRoles
@@ -980,7 +980,7 @@ func userCanDoStep(u *auth.User, s *engine.StepState) bool {
 	if u.CanAdmin() || s.Assign == "" {
 		return true
 	}
-	if s.Assign == "user:"+u.Name || s.Assign == u.Name || s.Assign == u.Email {
+	if s.Assign == "user:"+u.Name || s.Assign == "user:"+u.Email || s.Assign == u.Name || s.Assign == u.Email {
 		return true
 	}
 	if strings.HasPrefix(s.Assign, "role:") {

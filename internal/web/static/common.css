@@ -10,6 +10,29 @@
   flex-wrap: wrap;
   border-bottom: 1px solid var(--border);
 }
+.filter-bar.hidden { display: none; }
+.filter-bar-toggle {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  z-index: 500;
+  background: var(--bg3);
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  color: var(--text3);
+  font-size: 0.75rem;
+  font-family: monospace;
+  padding: 0.3rem 0.65rem;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+.filter-bar.hidden ~ .filter-bar-toggle,
+.filter-bar-toggle.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
 .filter-search {
   border: 1.5px solid var(--border);
   border-radius: 7px;

@@ -6,7 +6,7 @@ section Vorbereitung
 
 step Antrag einreichen
   note Bitte alle Unterlagen beifügen.
-  assign "user:max"
+  assign "user:suzie@mailbox.org"
 
 step Erste Prüfung
   note Wird automatisch nach 3 Tagen aktiviert.
