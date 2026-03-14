@@ -124,6 +124,16 @@ header a.builder-link { color: var(--accent); text-decoration: none; font-size: 
   <h1>Flow<span>App</span></h1>
   <a href="/builder" class="builder-link">⚙ Builder</a>
   <button class="theme-btn" onclick="toggleTheme()">◐</button>
+  {{if .CurrentUser}}
+  <div style="display:flex;align-items:center;gap:0.6rem;margin-left:0.5rem;">
+    {{if isAdmin .CurrentUser}}<a href="/admin/users" style="color:#aaa;text-decoration:none;font-size:0.8rem;background:#2a2a40;padding:0.3rem 0.7rem;border-radius:6px;">👥 Users</a>{{end}}
+    <span style="font-size:0.8rem;color:#aaa;">{{.CurrentUser.Name}}</span>
+    <form method="POST" action="/logout" style="margin:0;">
+      <button type="submit" style="background:#2a2a40;border:1px solid #3a3a55;color:#aaa;border-radius:6px;padding:0.3rem 0.65rem;cursor:pointer;font-size:0.8rem;">Logout</button>
+    </form>
+  </div>
+  {{end}}
+  {{if canWrite .CurrentUser}}
   <form class="new-form" method="POST" action="/instance">
     <select name="workflow" required>
       <option value="" disabled selected>Workflow…</option>
@@ -141,6 +151,7 @@ header a.builder-link { color: var(--accent); text-decoration: none; font-size: 
     </select>
     <button type="submit">+ New</button>
   </form>
+  {{end}}
 </header>
 
 <div class="filter-bar" id="filterBar">
@@ -526,9 +537,9 @@ function applyCLI() {
   window.location = '/?' + p.toString();
 }
 
-const _adj = ["golden","silbern","sanft","kühn","rasch","still","wild","klar","tief","weit","rein","frei","frisch","stark","weise","dunkel","hell","offen","scharf","leise","zart","schlicht","eben","grad","jung","alt","groß","klein","warm","kalt","bitter"];
+const _adj = ["golden","silbern","sanft","kühn","rasch","still","wild","klar","tief","weit","rein","frei","frisch","stark","weise","dunkel","hell","offen","scharf","leise","zart","schlicht","eben","grad","jung","alt","groß","klein","warm","kalt"];
 const _noun = ["Fuchs","Kranich","Kiefer","Eiche","Fluss","Stein","Morgen","Abend","Grat","Küste","Glut","Frost","Zeder","Bach","Fels","Hafen","Tal","Gipfel","Kamm","Hain","Moor","Klippe","Insel","Lichtung","Heide","Furt","Ebene","Bucht","Riff","Forst"];
-const _mod = ["alpha","beta","echo","delta","nova","null","prima","meta","kern","bogen","apex","basis","rand","knoten","fluss","gitter","pfad","kreis","tor","hub","weg","pfad"];
+const _mod = ["alpha","beta","echo","delta","nova","null","prima","meta","kern","bogen","apex","basis","rand","knoten","fluss","gitter","pfad","kreis","tor","hub"];
 
 function randomTitle() {
   const pick = arr => arr[Math.floor(Math.random() * arr.length)];

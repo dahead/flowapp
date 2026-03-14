@@ -2,21 +2,7 @@
 
 A lightweight workflow management app written in Go. Define processes as `.workflow` files, run instances, track parallel tasks, and collect external approvals via tokenized links.
 
-
-
 ## Quick Start
-
-```bash
-./flowapp
-# → http://localhost:8080
-```
-
-```bash
-./flowapp --port 1234
-# → http://localhost:1234
-```
-
-## Go execution
 
 ```bash
 go run ./cmd/server
@@ -28,15 +14,15 @@ go run ./cmd/server
 Workflow files live in `workflows/`. Hot-reloaded on save.
 
 ```
-workflow Name-of-my-Workflow
+workflow "Name"
 priority high          # low | medium | high (default: medium)
 label finance          # multiple labels allowed
 
-section Billing
-  step "Invoice Check"
-    note "Please check the invoice for errors"
+section "Name"
+  step "Name"
+    note "Hint text shown on the step"
     due 2d             # 2h | 3d | 1w — deadline starts when step becomes ready
-    notify "accounting@company.com"
+    notify "email"     # logged to notifications.log on completion
     needs "Step A", "Step B"   # AND-join: all must be done first
     list "Item text"   # checklist item (default: required)
     list "Item text" optional
@@ -70,31 +56,6 @@ section Billing
 - `ask "?" -> "X", "Y"` = XOR-split: chosen target activates, others are skipped
 - `gate` generates a one-time token; combine with `notify` to send approval link by email
 - Cross-section `needs` are fully supported
-
-### Example: Core Features
-
-```
-workflow "Core Demo"
-
-section "Initial Check"
-  step "Preparation"
-    note "Prepare documents for review"
-    list "ID Copy"
-    list "Contract Draft"
-    list "Optional Photo" optional
-
-  step "Internal Approval"
-    needs "Preparation"
-    ask "Approve draft?" -> "Legal Review", "Reject"
-    notify "manager@company.com"
-
-section "External Verification"
-  step "Legal Review"
-    needs "Internal Approval"
-    gate
-    notify "legal@partner.com"
-    ends
-```
 
 ### Example: Parallel + Join
 
@@ -172,3 +133,13 @@ When this step becomes ready:
 | `done` | Completed |
 | `skipped` | Bypassed by ask routing |
 | `ended` | Terminal step reached |
+
+## Auth Setup
+
+Before first run after adding auth, update dependencies:
+```bash
+go get golang.org/x/crypto@v0.21.0
+go mod tidy
+```
+
+On first start with no `data/users.json`, FlowApp redirects to `/setup` to create the admin account.

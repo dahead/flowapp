@@ -1,6 +1,7 @@
 package web
 
 import (
+	"flowapp/internal/auth"
 	"flowapp/internal/engine"
 	"flowapp/internal/store"
 	"html/template"
@@ -13,10 +14,15 @@ import (
 
 type Handler struct {
 	store     *store.Store
+	users     *auth.UserStore
 	templates *template.Template
 }
 
-func New(s *store.Store, tmplGlob string) (*Handler, error) {
+type ctxKey string
+
+const ctxUserKey ctxKey = "user"
+
+func New(s *store.Store, users *auth.UserStore, tmplGlob string) (*Handler, error) {
 	tmpl, err := template.New("").Funcs(template.FuncMap{
 		"lower":               strings.ToLower,
 		"dueLabel":            func(s *engine.StepState) string { return s.DueLabel() },
@@ -52,12 +58,8 @@ func New(s *store.Store, tmplGlob string) (*Handler, error) {
 			}
 			return r
 		},
-		"not":         func(b bool) bool { return !b },
-		"hasPriority": func(d boardData, p string) bool { return containsStr(d.FilterPriorities, p) },
-		"hasLabel":    func(d boardData, l string) bool { return containsStr(d.FilterLabels, strings.ToLower(l)) },
-		"hasActiveFilters": func(d boardData) bool {
-			return d.FilterQ != "" || len(d.FilterPriorities) > 0 || len(d.FilterLabels) > 0 || d.FilterDue != "" || d.FilterCreated != ""
-		},
+		"not":   func(b bool) bool { return !b },
+		"slice": func(a ...string) []string { return a },
 		"visibleNeeds": func(needs []string) string {
 			var out []string
 			for _, n := range needs {
@@ -67,35 +69,199 @@ func New(s *store.Store, tmplGlob string) (*Handler, error) {
 			}
 			return strings.Join(out, ", ")
 		},
-		"slice": func(a ...string) []string { return a },
+		"hasPriority": func(d boardData, p string) bool { return containsStr(d.FilterPriorities, p) },
+		"hasLabel":    func(d boardData, l string) bool { return containsStr(d.FilterLabels, strings.ToLower(l)) },
+		"hasActiveFilters": func(d boardData) bool {
+			return d.FilterQ != "" || len(d.FilterPriorities) > 0 || len(d.FilterLabels) > 0 || d.FilterDue != "" || d.FilterCreated != ""
+		},
+		"roleLabel": func(r auth.Role) string {
+			switch r {
+			case auth.RoleAdmin:
+				return "Admin"
+			case auth.RoleUser:
+				return "User"
+			case auth.RoleViewer:
+				return "Viewer"
+			}
+			return string(r)
+		},
+		"isAdmin": func(u *auth.User) bool { return u != nil && u.CanAdmin() },
+		"initial": func(s string) string {
+			if len(s) == 0 {
+				return "?"
+			}
+			r := []rune(s)
+			return string(r[0])
+		},
+		"canWrite": func(u *auth.User) bool { return u != nil && u.CanWrite() },
 	}).ParseGlob(tmplGlob)
 	if err != nil {
 		return nil, err
 	}
-	return &Handler{store: s, templates: tmpl}, nil
+	return &Handler{store: s, users: users, templates: tmpl}, nil
 }
+
+// ── Auth middleware ──
+
+func (h *Handler) currentUser(r *http.Request) *auth.User {
+	id, err := auth.GetSessionUserID(r)
+	if err != nil {
+		return nil
+	}
+	u, ok := h.users.GetByID(id)
+	if !ok || !u.Active {
+		return nil
+	}
+	return u
+}
+
+func (h *Handler) requireAuth(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		u := h.currentUser(r)
+		if u == nil {
+			http.Redirect(w, r, "/login?next="+r.URL.RequestURI(), http.StatusSeeOther)
+			return
+		}
+		next(w, r)
+	}
+}
+
+func (h *Handler) requireWrite(next http.HandlerFunc) http.HandlerFunc {
+	return h.requireAuth(func(w http.ResponseWriter, r *http.Request) {
+		u := h.currentUser(r)
+		if !u.CanWrite() {
+			h.renderError(w, r, "Keine Berechtigung für diese Aktion.", http.StatusForbidden)
+			return
+		}
+		next(w, r)
+	})
+}
+
+func (h *Handler) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
+	return h.requireAuth(func(w http.ResponseWriter, r *http.Request) {
+		u := h.currentUser(r)
+		if !u.CanAdmin() {
+			h.renderError(w, r, "Nur Admins können diese Seite aufrufen.", http.StatusForbidden)
+			return
+		}
+		next(w, r)
+	})
+}
+
+// ── Routes ──
 
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("GET /", h.board)
-	mux.HandleFunc("GET /builder", h.builder)
-	mux.HandleFunc("GET /instance/{id}", h.instanceDetail)
-	mux.HandleFunc("POST /instance", h.createInstance)
-	mux.HandleFunc("POST /instance/{id}/edit", h.editInstance)
-	mux.HandleFunc("POST /instance/{id}/step", h.advanceStep)
-	mux.HandleFunc("POST /instance/{id}/ask", h.answerAsk)
-	mux.HandleFunc("POST /instance/{id}/clone", h.cloneInstance)
-	mux.HandleFunc("POST /instance/{id}/comment", h.addComment)
-	mux.HandleFunc("POST /instance/{id}/delete", h.deleteInstance)
-	mux.HandleFunc("POST /instance/{id}/listitem/toggle", h.toggleListItem)
-	mux.HandleFunc("POST /instance/{id}/listitem/add", h.addListItem)
-	mux.HandleFunc("POST /instance/{id}/listitem/checkall", h.checkAllListItems)
-	// external gate approval
-	mux.HandleFunc("POST /reorder", h.reorder)
+	// setup (only when no users exist)
+	mux.HandleFunc("GET /setup", h.setupPage)
+	mux.HandleFunc("POST /setup", h.setupSubmit)
+	// auth
+	mux.HandleFunc("GET /login", h.loginPage)
+	mux.HandleFunc("POST /login", h.loginSubmit)
+	mux.HandleFunc("POST /logout", h.logout)
+	// app (auth required)
+	mux.HandleFunc("GET /", h.requireAuth(h.board))
+	mux.HandleFunc("GET /builder", h.requireAuth(h.builder))
+	mux.HandleFunc("GET /instance/{id}", h.requireAuth(h.instanceDetail))
+	mux.HandleFunc("POST /instance", h.requireWrite(h.createInstance))
+	mux.HandleFunc("POST /instance/{id}/edit", h.requireWrite(h.editInstance))
+	mux.HandleFunc("POST /instance/{id}/step", h.requireWrite(h.advanceStep))
+	mux.HandleFunc("POST /instance/{id}/ask", h.requireWrite(h.answerAsk))
+	mux.HandleFunc("POST /instance/{id}/clone", h.requireWrite(h.cloneInstance))
+	mux.HandleFunc("POST /instance/{id}/comment", h.requireWrite(h.addComment))
+	mux.HandleFunc("POST /instance/{id}/delete", h.requireWrite(h.deleteInstance))
+	mux.HandleFunc("POST /instance/{id}/listitem/toggle", h.requireWrite(h.toggleListItem))
+	mux.HandleFunc("POST /instance/{id}/listitem/add", h.requireWrite(h.addListItem))
+	mux.HandleFunc("POST /instance/{id}/listitem/checkall", h.requireWrite(h.checkAllListItems))
+	mux.HandleFunc("POST /reorder", h.requireWrite(h.reorder))
+	// gate approval — no auth, token is the credential
 	mux.HandleFunc("GET /approve/{token}", h.approvalPage)
 	mux.HandleFunc("POST /approve/{token}", h.approvalSubmit)
+	// admin
+	mux.HandleFunc("GET /admin/users", h.requireAdmin(h.adminUsers))
+	mux.HandleFunc("POST /admin/users", h.requireAdmin(h.adminCreateUser))
+	mux.HandleFunc("POST /admin/users/{id}/edit", h.requireAdmin(h.adminEditUser))
+	mux.HandleFunc("POST /admin/users/{id}/delete", h.requireAdmin(h.adminDeleteUser))
+	mux.HandleFunc("POST /admin/users/{id}/password", h.requireAdmin(h.adminResetPassword))
 }
 
-// --- board ---
+// ── Setup ──
+
+func (h *Handler) setupPage(w http.ResponseWriter, r *http.Request) {
+	if !h.users.Empty() {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+	h.render(w, r, "setup.html", map[string]string{"Error": ""})
+}
+
+func (h *Handler) setupSubmit(w http.ResponseWriter, r *http.Request) {
+	if !h.users.Empty() {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+	r.ParseForm()
+	email := strings.TrimSpace(r.FormValue("email"))
+	name := strings.TrimSpace(r.FormValue("name"))
+	password := r.FormValue("password")
+	confirm := r.FormValue("confirm")
+	if email == "" || name == "" || password == "" {
+		h.render(w, r, "setup.html", map[string]string{"Error": "Alle Felder ausfüllen."})
+		return
+	}
+	if password != confirm {
+		h.render(w, r, "setup.html", map[string]string{"Error": "Passwörter stimmen nicht überein."})
+		return
+	}
+	if len(password) < 8 {
+		h.render(w, r, "setup.html", map[string]string{"Error": "Passwort muss mindestens 8 Zeichen haben."})
+		return
+	}
+	u, err := h.users.Create(email, name, password, auth.RoleAdmin)
+	if err != nil {
+		h.render(w, r, "setup.html", map[string]string{"Error": err.Error()})
+		return
+	}
+	auth.SetSession(w, u.ID)
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+// ── Login / Logout ──
+
+func (h *Handler) loginPage(w http.ResponseWriter, r *http.Request) {
+	if !h.users.Empty() && h.currentUser(r) != nil {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+	if h.users.Empty() {
+		http.Redirect(w, r, "/setup", http.StatusSeeOther)
+		return
+	}
+	h.render(w, r, "login.html", map[string]string{"Error": "", "Next": r.URL.Query().Get("next")})
+}
+
+func (h *Handler) loginSubmit(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	email := strings.TrimSpace(r.FormValue("email"))
+	password := r.FormValue("password")
+	next := r.FormValue("next")
+	if next == "" {
+		next = "/"
+	}
+	u, err := h.users.Authenticate(email, password)
+	if err != nil {
+		h.render(w, r, "login.html", map[string]string{"Error": "Ungültige E-Mail oder Passwort.", "Next": next})
+		return
+	}
+	auth.SetSession(w, u.ID)
+	http.Redirect(w, r, next, http.StatusSeeOther)
+}
+
+func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {
+	auth.ClearSession(w)
+	http.Redirect(w, r, "/login", http.StatusSeeOther)
+}
+
+// ── Board ──
 
 type card struct {
 	ID, Title, WorkflowName string
@@ -104,8 +270,7 @@ type card struct {
 	Priority                string
 	HasOverdue              bool
 	Labels                  []string
-	CreatedAt               string
-	UpdatedAt               string
+	CreatedAt, UpdatedAt    string
 }
 
 type column struct {
@@ -123,16 +288,16 @@ type boardData struct {
 	FilterDue        string
 	FilterCreated    string
 	Flash            string
+	CurrentUser      *auth.User
 }
 
 func (h *Handler) board(w http.ResponseWriter, r *http.Request) {
+	u := h.currentUser(r)
 	q := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
 	filterPriorities := r.URL.Query()["priority"]
 	filterLabels := r.URL.Query()["label"]
 	filterDue := r.URL.Query().Get("due")
 	filterCreated := r.URL.Query().Get("created")
-
-	// normalize labels to lowercase
 	for i, l := range filterLabels {
 		filterLabels[i] = strings.ToLower(l)
 	}
@@ -165,15 +330,11 @@ func (h *Handler) board(w http.ResponseWriter, r *http.Request) {
 		if len(filterLabels) > 0 && !hasAnyLabel(inst.Labels, filterLabels) {
 			continue
 		}
-		if filterDue != "" {
-			if !matchDueFilter(inst, filterDue, now) {
-				continue
-			}
+		if filterDue != "" && !matchDueFilter(inst, filterDue, now) {
+			continue
 		}
-		if filterCreated != "" {
-			if !matchCreatedFilter(inst, filterCreated, now) {
-				continue
-			}
+		if filterCreated != "" && !matchCreatedFilter(inst, filterCreated, now) {
+			continue
 		}
 		done, total := inst.Progress()
 		pct := 0
@@ -209,21 +370,25 @@ func (h *Handler) board(w http.ResponseWriter, r *http.Request) {
 	sort.Strings(allLabels)
 
 	flash := getFlash(w, r)
-	h.render(w, "board.html", boardData{
+	h.render(w, r, "board.html", boardData{
 		Columns:     []column{*cols["Todo"], *cols["In Progress"], *cols["Done"]},
 		Definitions: defNames, AllLabels: allLabels,
-		FilterQ: r.URL.Query().Get("q"), FilterPriorities: filterPriorities, FilterLabels: filterLabels,
-		FilterDue: filterDue, FilterCreated: filterCreated, Flash: flash,
+		FilterQ: r.URL.Query().Get("q"), FilterPriorities: filterPriorities,
+		FilterLabels: filterLabels, FilterDue: filterDue, FilterCreated: filterCreated,
+		Flash: flash, CurrentUser: u,
 	})
 }
 
 func (h *Handler) builder(w http.ResponseWriter, r *http.Request) {
-	h.render(w, "builder.html", nil)
+	h.render(w, r, "builder.html", map[string]interface{}{"CurrentUser": h.currentUser(r)})
 }
+
+// ── Instance ──
 
 type instanceData struct {
 	*engine.Instance
-	Flash string
+	Flash       string
+	CurrentUser *auth.User
 }
 
 func (h *Handler) instanceDetail(w http.ResponseWriter, r *http.Request) {
@@ -232,7 +397,7 @@ func (h *Handler) instanceDetail(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	h.render(w, "instance.html", instanceData{inst, getFlash(w, r)})
+	h.render(w, r, "instance.html", instanceData{inst, getFlash(w, r), h.currentUser(r)})
 }
 
 func (h *Handler) createInstance(w http.ResponseWriter, r *http.Request) {
@@ -336,7 +501,17 @@ func (h *Handler) checkAllListItems(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/instance/"+id, http.StatusSeeOther)
 }
 
-// --- Gate approval pages ---
+func (h *Handler) reorder(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	ids := r.Form["ids[]"]
+	if err := h.store.ReorderInstances(ids); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+// ── Gate approval ──
 
 type approvalData struct {
 	Token    string
@@ -350,14 +525,14 @@ func (h *Handler) approvalPage(w http.ResponseWriter, r *http.Request) {
 	token := r.PathValue("token")
 	inst, step := h.store.FindByToken(token)
 	if inst == nil || step == nil {
-		h.render(w, "approve.html", approvalData{Token: token, Error: "Link not found or already used."})
+		h.render(w, r, "approve.html", approvalData{Token: token, Error: "Link nicht gefunden oder bereits verwendet."})
 		return
 	}
 	if step.GateUsed {
-		h.render(w, "approve.html", approvalData{Token: token, Done: true, Step: step, Instance: inst})
+		h.render(w, r, "approve.html", approvalData{Token: token, Done: true, Step: step, Instance: inst})
 		return
 	}
-	h.render(w, "approve.html", approvalData{Token: token, Step: step, Instance: inst})
+	h.render(w, r, "approve.html", approvalData{Token: token, Step: step, Instance: inst})
 }
 
 func (h *Handler) approvalSubmit(w http.ResponseWriter, r *http.Request) {
@@ -366,26 +541,80 @@ func (h *Handler) approvalSubmit(w http.ResponseWriter, r *http.Request) {
 	idx, _ := strconv.Atoi(r.FormValue("choice"))
 	inst, step, err := h.store.RedeemGate(token, idx)
 	if err != nil {
-		h.render(w, "approve.html", approvalData{Token: token, Error: err.Error()})
+		h.render(w, r, "approve.html", approvalData{Token: token, Error: err.Error()})
 		return
 	}
-	h.render(w, "approve.html", approvalData{Token: token, Done: true, Step: step, Instance: inst})
+	h.render(w, r, "approve.html", approvalData{Token: token, Done: true, Step: step, Instance: inst})
 }
 
-func (h *Handler) reorder(w http.ResponseWriter, r *http.Request) {
+// ── Admin ──
+
+type adminData struct {
+	Users       []*auth.User
+	Flash       string
+	CurrentUser *auth.User
+}
+
+func (h *Handler) adminUsers(w http.ResponseWriter, r *http.Request) {
+	users := h.users.List()
+	sort.Slice(users, func(i, j int) bool { return users[i].CreatedAt.Before(users[j].CreatedAt) })
+	h.render(w, r, "admin.html", adminData{Users: users, Flash: getFlash(w, r), CurrentUser: h.currentUser(r)})
+}
+
+func (h *Handler) adminCreateUser(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
-	ids := r.Form["ids[]"]
-	if err := h.store.ReorderInstances(ids); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	email := strings.TrimSpace(r.FormValue("email"))
+	name := strings.TrimSpace(r.FormValue("name"))
+	password := r.FormValue("password")
+	role := auth.Role(r.FormValue("role"))
+	if _, err := h.users.Create(email, name, password, role); err != nil {
+		flashError(w, r, err.Error())
+	}
+	http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
+}
+
+func (h *Handler) adminEditUser(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	id := r.PathValue("id")
+	active := r.FormValue("active") == "1"
+	if err := h.users.Update(id, r.FormValue("name"), r.FormValue("email"),
+		auth.Role(r.FormValue("role")), active); err != nil {
+		flashError(w, r, err.Error())
+	}
+	http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
+}
+
+func (h *Handler) adminDeleteUser(w http.ResponseWriter, r *http.Request) {
+	cu := h.currentUser(r)
+	id := r.PathValue("id")
+	if cu != nil && cu.ID == id {
+		flashError(w, r, "Du kannst deinen eigenen Account nicht löschen.")
+		http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
 		return
 	}
-	w.WriteHeader(http.StatusOK)
+	h.users.Delete(id)
+	http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
 }
+
+func (h *Handler) adminResetPassword(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	id := r.PathValue("id")
+	pw := r.FormValue("password")
+	if len(pw) < 8 {
+		flashError(w, r, "Passwort muss mindestens 8 Zeichen haben.")
+		http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
+		return
+	}
+	if err := h.users.ResetPassword(id, pw); err != nil {
+		flashError(w, r, err.Error())
+	}
+	http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
+}
+
+// ── Helpers ──
 
 func flashError(w http.ResponseWriter, r *http.Request, msg string) {
-	http.SetCookie(w, &http.Cookie{
-		Name: "flash_error", Value: msg, Path: "/", MaxAge: 10,
-	})
+	http.SetCookie(w, &http.Cookie{Name: "flash_error", Value: msg, Path: "/", MaxAge: 10})
 	ref := r.Header.Get("Referer")
 	if ref == "" {
 		ref = "/"
@@ -402,7 +631,7 @@ func getFlash(w http.ResponseWriter, r *http.Request) string {
 	return c.Value
 }
 
-func (h *Handler) render(w http.ResponseWriter, name string, data any) {
+func (h *Handler) render(w http.ResponseWriter, r *http.Request, name string, data any) {
 	var buf strings.Builder
 	if err := h.templates.ExecuteTemplate(&buf, name, data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -410,6 +639,11 @@ func (h *Handler) render(w http.ResponseWriter, name string, data any) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Write([]byte(buf.String()))
+}
+
+func (h *Handler) renderError(w http.ResponseWriter, r *http.Request, msg string, code int) {
+	w.WriteHeader(code)
+	h.render(w, r, "error.html", map[string]interface{}{"Message": msg, "Code": code, "CurrentUser": h.currentUser(r)})
 }
 
 func containsStr(slice []string, s string) bool {

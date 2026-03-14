@@ -157,6 +157,11 @@ header h2 { font-size: 1.2rem; flex: 1; }
   <span class="wf-badge">{{.WorkflowName}}</span>
   <span class="priority-badge {{.Priority}}">{{.Priority}}</span>
   <button class="theme-btn" onclick="toggleTheme()">◐</button>
+  {{if .CurrentUser}}
+  <form method="POST" action="/logout" style="margin:0;">
+    <button type="submit" style="background:#2a2a40;border:1px solid #3a3a55;color:#aaa;border-radius:6px;padding:0.3rem 0.65rem;cursor:pointer;font-size:0.8rem;">Logout</button>
+  </form>
+  {{end}}
 </header>
 
 <div class="content">
@@ -224,7 +229,7 @@ header h2 { font-size: 1.2rem; flex: 1; }
               {{end}}
             </div>
 
-            {{if isReady .}}
+            {{if and (isReady .) (canWrite $.CurrentUser)}}
             <div class="step-actions">
               <form method="POST" action="/instance/{{$id}}/step">
                 <input type="hidden" name="step" value="{{.Name}}">
@@ -237,7 +242,7 @@ header h2 { font-size: 1.2rem; flex: 1; }
             </div>
             {{end}}
 
-            {{if isAsk .}}
+            {{if and (isAsk .) (canWrite $.CurrentUser)}}
             <div class="step-actions" style="flex-direction:column;align-items:flex-start;">
               <div class="ask-question">{{.Ask.Question}}</div>
               <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
