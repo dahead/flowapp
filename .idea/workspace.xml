@@ -4,12 +4,11 @@
     <option name="autoReloadType" value="ALL" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="ada8723d-5b9c-428d-afc5-8d56573480fd" name="Changes" comment="Auth">
+    <list default="true" id="ada8723d-5b9c-428d-afc5-8d56573480fd" name="Changes" comment="Auth and Tests">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/data/1773427348769114060.json" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/flowapp" beforeDir="false" afterPath="$PROJECT_DIR$/flowapp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/store/store.go" beforeDir="false" afterPath="$PROJECT_DIR$/internal/store/store.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/web/templates/builder.html" beforeDir="false" afterPath="$PROJECT_DIR$/internal/web/templates/builder.html" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -146,6 +145,8 @@
     <MESSAGE value="Init" />
     <MESSAGE value="Refinement 1" />
     <MESSAGE value="Auth" />
-    <option name="LAST_COMMIT_MESSAGE" value="Auth" />
+    <MESSAGE value="Builder improvements" />
+    <MESSAGE value="Auth and Tests" />
+    <option name="LAST_COMMIT_MESSAGE" value="Auth and Tests" />
   </component>
 </project>

@@ -2,6 +2,28 @@
 
 A lightweight workflow management app written in Go. Define processes as `.workflow` files, run instances, track parallel tasks, and collect external approvals via tokenized links.
 
+## Overview
+
+Overview:
+
+![FlowApp screenshot main page overview](/screenshots/overview-dark-v2.png)
+
+Filter / search:
+
+![FlowApp screenshot search](/screenshots/overview-dark-search-v2.png)
+
+Workflow in detail:
+
+![FlowApp screenshot](/screenshots/workflow-v2.png)
+
+Workflow builder:
+
+![FlowApp screenshot](/screenshots/builder-loaded-v2.png)
+
+User management:
+
+![FlowApp screenshot](/screenshots/usermanagement-v2.png)
+
 ## Quick Start
 
 ```bash
@@ -135,11 +157,5 @@ When this step becomes ready:
 | `ended` | Terminal step reached |
 
 ## Auth Setup
-
-Before first run after adding auth, update dependencies:
-```bash
-go get golang.org/x/crypto@v0.21.0
-go mod tidy
-```
 
 On first start with no `data/users.json`, FlowApp redirects to `/setup` to create the admin account.
