@@ -10,6 +10,7 @@ type Workflow struct {
 	Name     string
 	Priority string
 	Labels   []string
+	Vars     []string  // variable names to prompt on instance creation
 	Sections []*Section
 }
 
@@ -22,12 +23,13 @@ type Step struct {
 	Name      string
 	Note      string
 	Notify    string
+	Assign    string
 	Due       string
-	Needs     []string // AND-join: all must be done
+	Needs     []string  // AND-join: all must be done
 	ListItems []ListItem
-	Ask       *AskDef // nil if not an ask step
-	Gate      bool    // waits for external approval via token link
-	Ends      bool    // terminal step, no successors
+	Ask       *AskDef   // nil if not an ask step
+	Gate      bool      // waits for external approval via token link
+	Ends      bool      // terminal step, no successors
 }
 
 type AskDef struct {
@@ -38,10 +40,6 @@ type AskDef struct {
 type ListItem struct {
 	Text     string
 	Required bool
-}
-
-func trimQuotes(s string) string {
-	return strings.Trim(s, "\"")
 }
 
 func Parse(input string) (*Workflow, error) {
@@ -70,7 +68,7 @@ func Parse(input string) (*Workflow, error) {
 			if len(args) == 0 {
 				return nil, fmt.Errorf("line %d: 'workflow' requires a name", lineNum)
 			}
-			wf.Name = trimQuotes(strings.Join(args, " "))
+			wf.Name = strings.Join(args, " ")
 
 		case "priority":
 			if len(args) == 0 {
@@ -82,13 +80,19 @@ func Parse(input string) (*Workflow, error) {
 			if len(args) == 0 {
 				return nil, fmt.Errorf("line %d: 'label' requires a name", lineNum)
 			}
-			wf.Labels = append(wf.Labels, strings.ToLower(trimQuotes(strings.Join(args, " "))))
+			wf.Labels = append(wf.Labels, strings.ToLower(strings.Join(args, " ")))
+
+		case "var":
+			if len(args) == 0 {
+				return nil, fmt.Errorf("line %d: 'var' requires a variable name", lineNum)
+			}
+			wf.Vars = append(wf.Vars, strings.Join(args, " "))
 
 		case "section":
 			if len(args) == 0 {
 				return nil, fmt.Errorf("line %d: 'section' requires a name", lineNum)
 			}
-			currentSection = &Section{Name: trimQuotes(strings.Join(args, " "))}
+			currentSection = &Section{Name: strings.Join(args, " ")}
 			wf.Sections = append(wf.Sections, currentSection)
 			currentStep = nil
 
@@ -99,20 +103,26 @@ func Parse(input string) (*Workflow, error) {
 			if len(args) == 0 {
 				return nil, fmt.Errorf("line %d: 'step' requires a name", lineNum)
 			}
-			currentStep = &Step{Name: trimQuotes(strings.Join(args, " "))}
+			currentStep = &Step{Name: strings.Join(args, " ")}
 			currentSection.Steps = append(currentSection.Steps, currentStep)
 
 		case "note":
 			if currentStep == nil {
 				return nil, fmt.Errorf("line %d: 'note' must be inside a step", lineNum)
 			}
-			currentStep.Note = trimQuotes(strings.Join(args, " "))
+			currentStep.Note = strings.Join(args, " ")
+
+		case "assign":
+			if currentStep == nil {
+				return nil, fmt.Errorf("line %d: 'assign' must be inside a step", lineNum)
+			}
+			currentStep.Assign = strings.Join(args, " ")
 
 		case "notify":
 			if currentStep == nil {
 				return nil, fmt.Errorf("line %d: 'notify' must be inside a step", lineNum)
 			}
-			currentStep.Notify = trimQuotes(strings.Join(args, " "))
+			currentStep.Notify = strings.Join(args, " ")
 
 		case "due":
 			if currentStep == nil {
@@ -138,13 +148,13 @@ func Parse(input string) (*Workflow, error) {
 				return nil, fmt.Errorf("line %d: 'list' requires item text", lineNum)
 			}
 			required := true
-			text := trimQuotes(strings.Join(args, " "))
-			last := strings.ToLower(trimQuotes(args[len(args)-1]))
+			text := strings.Join(args, " ")
+			last := strings.ToLower(args[len(args)-1])
 			if last == "optional" {
 				required = false
-				text = trimQuotes(strings.Join(args[:len(args)-1], " "))
+				text = strings.Join(args[:len(args)-1], " ")
 			} else if last == "required" {
-				text = trimQuotes(strings.Join(args[:len(args)-1], " "))
+				text = strings.Join(args[:len(args)-1], " ")
 			}
 			currentStep.ListItems = append(currentStep.ListItems, ListItem{Text: text, Required: required})
 
@@ -202,31 +212,17 @@ func parseAsk(args []string, lineNum int) (*AskDef, error) {
 	return &AskDef{Question: question, Targets: targets}, nil
 }
 
-// parseNameList parses comma-separated names from tokens.
-// It handles quoted names that might contain commas.
+// parseNameList parses comma-separated quoted names from tokens
 func parseNameList(tokens []string) []string {
+	// re-join and split by comma, strip quotes
 	raw := strings.Join(tokens, " ")
+	parts := strings.Split(raw, ",")
 	var names []string
-	var cur strings.Builder
-	inQ := false
-	for _, ch := range raw {
-		switch {
-		case ch == '"':
-			inQ = !inQ
-			// We don't write the quote to the name itself
-		case ch == ',' && !inQ:
-			name := strings.TrimSpace(cur.String())
-			if name != "" {
-				names = append(names, name)
-			}
-			cur.Reset()
-		default:
-			cur.WriteRune(ch)
+	for _, p := range parts {
+		name := strings.Trim(strings.TrimSpace(p), "\"")
+		if name != "" {
+			names = append(names, name)
 		}
-	}
-	name := strings.TrimSpace(cur.String())
-	if name != "" {
-		names = append(names, name)
 	}
 	return names
 }
@@ -239,7 +235,7 @@ func tokenize(line string) []string {
 		switch {
 		case ch == '"':
 			inQ = !inQ
-			cur.WriteRune(ch) // Keep the quote
+			// don't write the quote — tokens come out unquoted
 		case (ch == ' ' || ch == '\t') && !inQ:
 			if cur.Len() > 0 {
 				tokens = append(tokens, cur.String())
@@ -253,4 +249,50 @@ func tokenize(line string) []string {
 		tokens = append(tokens, cur.String())
 	}
 	return tokens
+}
+
+// DetectCycles returns an error if the workflow has circular needs dependencies.
+func DetectCycles(wf *Workflow) error {
+	// build adjacency: step → steps it needs
+	deps := map[string][]string{}
+	all  := map[string]bool{}
+	for _, sec := range wf.Sections {
+		for _, s := range sec.Steps {
+			all[s.Name] = true
+			deps[s.Name] = s.Needs
+		}
+	}
+	// DFS cycle detection
+	const (white, grey, black = 0, 1, 2)
+	color := map[string]int{}
+	var path []string
+	var visit func(name string) error
+	visit = func(name string) error {
+		color[name] = grey
+		path = append(path, name)
+		for _, dep := range deps[name] {
+			if !all[dep] { continue }
+			switch color[dep] {
+			case grey:
+				// find cycle start
+				for i, n := range path {
+					if n == dep {
+						return fmt.Errorf("circular dependency: %s", strings.Join(append(path[i:], dep), " → "))
+					}
+				}
+				return fmt.Errorf("circular dependency involving %q", dep)
+			case white:
+				if err := visit(dep); err != nil { return err }
+			}
+		}
+		path = path[:len(path)-1]
+		color[name] = black
+		return nil
+	}
+	for name := range all {
+		if color[name] == white {
+			if err := visit(name); err != nil { return err }
+		}
+	}
+	return nil
 }

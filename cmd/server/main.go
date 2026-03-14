@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"flowapp/internal/auth"
 	"flowapp/internal/store"
 	"flowapp/internal/web"
@@ -9,7 +10,10 @@ import (
 )
 
 func main() {
-	users, err := auth.NewUserStore("data/users.json")
+	if err := os.MkdirAll("setup", 0700); err != nil {
+		log.Fatal("setup dir:", err)
+	}
+	users, err := auth.NewUserStore("setup/users.json")
 	if err != nil {
 		log.Fatal("userstore:", err)
 	}

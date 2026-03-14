@@ -1,15 +1,18 @@
 workflow "Employee Onboarding"
 priority high
 label hr
+var EMPLOYEE_NAME
+var START_DATE
 
 section "Trigger"
   step "Start Onboarding"
-    note "New employee confirmed — kick off all parallel tracks"
+    note "New employee $EMPLOYEE_NAME starts on $START_DATE"
 
 section "HR"
   step "Send Welcome Email"
     needs "Start Onboarding"
     notify "hr@company.com"
+    note "Welcome email to $EMPLOYEE_NAME"
 
   step "Create Employee Record"
     needs "Start Onboarding"
@@ -24,7 +27,7 @@ section "HR"
 
   step "Contract Review"
     needs "Prepare Employment Contract"
-    ask "Contract signed by employee?" -> "Onboarding Complete", "Escalate HR"
+    ask "Contract signed by $EMPLOYEE_NAME?" -> "Onboarding Complete", "Escalate HR"
     gate
     notify "hr@company.com"
 
@@ -36,7 +39,7 @@ section "HR"
   step "Onboarding Complete"
     needs "Contract Review", "IT Ready", "Office Ready", "Buddy Introduction"
     notify "hr@company.com"
-    note "Send first-day schedule to new employee"
+    note "Send first-day schedule to $EMPLOYEE_NAME"
 
 section "IT"
   step "Create Accounts"
@@ -58,7 +61,7 @@ section "IT"
 
   step "IT Approval"
     needs "Create Accounts", "Prepare Hardware"
-    ask "IT setup complete and approved?" -> "IT Ready", "IT Issues"
+    ask "IT setup complete for $EMPLOYEE_NAME?" -> "IT Ready", "IT Issues"
     gate
     notify "it@company.com"
 
@@ -81,7 +84,7 @@ section "Office"
 
   step "Office Approval"
     needs "Prepare Workspace"
-    ask "Workspace ready for day one?" -> "Office Ready", "Office Issues"
+    ask "Workspace ready for $EMPLOYEE_NAME?" -> "Office Ready", "Office Issues"
     gate
     notify "facilities@company.com"
 

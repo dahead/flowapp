@@ -1,0 +1,45 @@
+{{define "archive.html"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="/static/app.css">
+<title>Archive — FlowApp</title>
+<script src="/static/theme-init.js"></script>
+<link rel="stylesheet" href="/static/archive.css">
+</head>
+<body>
+<header>
+  <a href="/">← Board</a>
+  <h2>Archive</h2>
+  <span style="font-size:0.8rem;color:#aaa;">{{if .CurrentUser}}{{.CurrentUser.Name}}{{end}}</span>
+  <button class="theme-btn" onclick="document.documentElement.setAttribute('data-theme',document.documentElement.getAttribute('data-theme')==='dark'?'light':'dark');localStorage.setItem('theme',document.documentElement.getAttribute('data-theme'))">◐</button>
+</header>
+<div class="content">
+  <div class="search-bar">
+    <input type="text" id="searchInput" placeholder="🔍 Search archived workflows…" value="{{.FilterQ}}"
+      onkeydown="if(event.key==='Enter')location='?q='+encodeURIComponent(this.value)">
+  </div>
+  {{if eq (len .Instances) 0}}
+  <div class="empty">No completed workflows yet.</div>
+  {{else}}
+  {{range .Instances}}
+  <div class="row" onclick="location='/instance/{{.ID}}'">
+    <div class="priority-dot {{.Priority}}"></div>
+    <div style="flex:1;">
+      <div class="row-title">{{.Title}}</div>
+      <div class="row-wf">{{.WorkflowName}}</div>
+    </div>
+    {{if eq (print .Status) "done"}}
+    <span class="badge-done">✓ done</span>
+    {{else}}
+    <span class="badge-done" style="background:#fef3c7;color:#92400e;">📦 archived</span>
+    {{end}}
+    <div class="row-date">{{.UpdatedAt.Format "02.01.2006 15:04"}}</div>
+  </div>
+  {{end}}
+  {{end}}
+</div>
+</body>
+</html>
+{{end}}

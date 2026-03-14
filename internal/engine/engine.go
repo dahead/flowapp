@@ -15,13 +15,13 @@ import (
 type Status string
 
 const (
-	StatusPending Status = "pending" // needs not yet satisfied
-	StatusReady   Status = "ready"   // can be acted on
-	StatusAsk     Status = "ask"     // waiting for UI answer
-	StatusGate    Status = "gate"    // waiting for external token
-	StatusDone    Status = "done"
-	StatusSkipped Status = "skipped" // bypassed by ask routing
-	StatusEnded   Status = "ended"   // ends keyword
+	StatusPending  Status = "pending"  // needs not yet satisfied
+	StatusReady    Status = "ready"    // can be acted on
+	StatusAsk      Status = "ask"      // waiting for UI answer
+	StatusGate     Status = "gate"     // waiting for external token
+	StatusDone     Status = "done"
+	StatusSkipped  Status = "skipped"  // bypassed by ask routing
+	StatusEnded    Status = "ended"    // ends keyword
 )
 
 type Comment struct {
@@ -61,6 +61,8 @@ type Instance struct {
 	Sections     []*SectionState `json:"sections"`
 	Status       Status          `json:"status"`
 	Position     int             `json:"position"`
+	Archived     bool            `json:"archived,omitempty"`
+	Vars         map[string]string `json:"vars,omitempty"`
 	Comments     []Comment       `json:"comments,omitempty"`
 	Audit        []AuditEntry    `json:"audit,omitempty"`
 }
@@ -75,13 +77,15 @@ type StepState struct {
 	Status    Status     `json:"status"`
 	Note      string     `json:"note,omitempty"`
 	Notify    string     `json:"notify,omitempty"`
+	Assign    string     `json:"assign,omitempty"`
 	Due       string     `json:"due,omitempty"`
 	DueAt     *time.Time `json:"due_at,omitempty"`
 	StartedAt *time.Time `json:"started_at,omitempty"`
 	UpdatedAt time.Time  `json:"updated_at"`
 	Needs     []string   `json:"needs,omitempty"`
-	ListItems []ListItem `json:"list_items,omitempty"`
-	Ask       *AskState  `json:"ask,omitempty"`
+	ListItems []ListItem  `json:"list_items,omitempty"`
+	Ask       *AskState   `json:"ask,omitempty"`
+	Comments  []Comment   `json:"step_comments,omitempty"`
 	Gate      bool       `json:"gate,omitempty"`
 	GateToken string     `json:"gate_token,omitempty"`
 	GateUsed  bool       `json:"gate_used,omitempty"`
@@ -178,6 +182,7 @@ func NewInstance(id, title string, wf *dsl.Workflow) *Instance {
 		ID: id, WorkflowName: wf.Name, Title: title,
 		Labels: wf.Labels, Priority: wf.Priority,
 		CreatedAt: now, UpdatedAt: now, Status: StatusReady,
+		Vars: make(map[string]string),
 	}
 	if inst.Priority == "" {
 		inst.Priority = "medium"
@@ -208,7 +213,7 @@ func NewInstance(id, title string, wf *dsl.Workflow) *Instance {
 				needs = []string{"__ask_target__"}
 			}
 			st := &StepState{
-				Name: step.Name, Note: step.Note, Notify: step.Notify,
+				Name: step.Name, Note: step.Note, Notify: step.Notify, Assign: step.Assign,
 				Due: step.Due, Needs: needs,
 				Ask: askSt, Gate: step.Gate, Ends: step.Ends,
 				Status: StatusPending,
@@ -226,6 +231,26 @@ func NewInstance(id, title string, wf *dsl.Workflow) *Instance {
 	// initial activation: steps with no needs become ready
 	inst.activateReady(now)
 	return inst
+}
+
+// ApplyVars substitutes $VAR_NAME in step notes, names etc. after instance creation
+func (inst *Instance) ApplyVars(vars map[string]string) {
+	inst.Vars = vars
+	// substitute in title
+	inst.Title = substituteVars(inst.Title, vars)
+	// substitute in step notes and names
+	inst.allSteps(func(s *StepState) {
+		s.Note   = substituteVars(s.Note, vars)
+		s.Notify = substituteVars(s.Notify, vars)
+	})
+}
+
+func substituteVars(s string, vars map[string]string) string {
+	for k, v := range vars {
+		s = strings.ReplaceAll(s, "$"+k, v)
+		s = strings.ReplaceAll(s, "${"+k+"}", v)
+	}
+	return s
 }
 
 // activateReady scans all steps and activates those whose needs are satisfied
@@ -393,6 +418,7 @@ func (inst *Instance) recalc() {
 	})
 	if allTerminal {
 		inst.Status = StatusDone
+		inst.Archived = true
 	} else {
 		inst.Status = StatusReady
 	}
@@ -471,6 +497,19 @@ func (inst *Instance) AddListItem(stepName, text string) error {
 }
 
 // --- Comments ---
+
+func (inst *Instance) AddStepComment(stepName, text string) error {
+	s := inst.findStepByName(stepName)
+	if s == nil {
+		return fmt.Errorf("step '%s' not found", stepName)
+	}
+	if len(text) > 500 {
+		text = text[:500]
+	}
+	s.Comments = append(s.Comments, Comment{Text: text, CreatedAt: time.Now()})
+	inst.UpdatedAt = time.Now()
+	return nil
+}
 
 func (inst *Instance) AddComment(text string) error {
 	if inst.Status == StatusDone {

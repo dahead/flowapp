@@ -4,11 +4,24 @@
     <option name="autoReloadType" value="ALL" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="ada8723d-5b9c-428d-afc5-8d56573480fd" name="Changes" comment="Auth and Tests">
+    <list default="true" id="ada8723d-5b9c-428d-afc5-8d56573480fd" name="Changes" comment="Builds">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/cmd/server/main.go" beforeDir="false" afterPath="$PROJECT_DIR$/cmd/server/main.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/data/1773427348769114060.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/flowapp" beforeDir="false" afterPath="$PROJECT_DIR$/flowapp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/internal/dsl/parser.go" beforeDir="false" afterPath="$PROJECT_DIR$/internal/dsl/parser.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/internal/engine/engine.go" beforeDir="false" afterPath="$PROJECT_DIR$/internal/engine/engine.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/internal/store/store.go" beforeDir="false" afterPath="$PROJECT_DIR$/internal/store/store.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/internal/web/handler.go" beforeDir="false" afterPath="$PROJECT_DIR$/internal/web/handler.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/internal/web/templates/admin.html" beforeDir="false" afterPath="$PROJECT_DIR$/internal/web/templates/admin.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/internal/web/templates/approve.html" beforeDir="false" afterPath="$PROJECT_DIR$/internal/web/templates/approve.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/internal/web/templates/base.css" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/internal/web/templates/board.html" beforeDir="false" afterPath="$PROJECT_DIR$/internal/web/templates/board.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/internal/web/templates/builder.html" beforeDir="false" afterPath="$PROJECT_DIR$/internal/web/templates/builder.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/internal/web/templates/error.html" beforeDir="false" afterPath="$PROJECT_DIR$/internal/web/templates/error.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/internal/web/templates/instance.html" beforeDir="false" afterPath="$PROJECT_DIR$/internal/web/templates/instance.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/internal/web/templates/login.html" beforeDir="false" afterPath="$PROJECT_DIR$/internal/web/templates/login.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/internal/web/templates/setup.html" beforeDir="false" afterPath="$PROJECT_DIR$/internal/web/templates/setup.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/workflows/onboarding.workflow" beforeDir="false" afterPath="$PROJECT_DIR$/workflows/onboarding.workflow" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -16,7 +29,7 @@
     <option name="LAST_RESOLUTION" value="IGNORE" />
   </component>
   <component name="EmbeddingIndexingInfo">
-    <option name="cachedIndexableFilesCount" value="39" />
+    <option name="cachedIndexableFilesCount" value="71" />
     <option name="fileBasedEmbeddingIndicesEnabled" value="true" />
   </component>
   <component name="GOROOT" url="file:///usr/lib/go" />
@@ -49,38 +62,38 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "Go Build.Build.executor": "Run",
-    "Go Build.go build flowapp.executor": "Run",
-    "Go Build.go build main.go.executor": "Run",
-    "ModuleVcsDetector.initialDetectionPerformed": "true",
-    "RunOnceActivity.GoLinterPluginOnboardingV2": "true",
-    "RunOnceActivity.GoLinterPluginStorageMigration": "true",
-    "RunOnceActivity.MCP Project settings loaded": "true",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.git.unshallow": "true",
-    "RunOnceActivity.go.analysis.ui.options.defaults": "true",
-    "RunOnceActivity.go.formatter.settings.were.checked": "true",
-    "RunOnceActivity.go.modules.go.list.on.any.changes.was.set": "true",
-    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
-    "com.intellij.ml.llm.matterhorn.ej.ui.settings.DefaultModelSelectionForGA.v1": "true",
-    "git-widget-placeholder": "main",
-    "go.sdk.automatically.set": "true",
-    "junie.onboarding.icon.badge.shown": "true",
-    "last_opened_file_path": "/home/dh/GolandProjects/flowapp",
-    "node.js.detected.package.eslint": "true",
-    "node.js.selected.package.eslint": "(autodetect)",
-    "nodejs_package_manager_path": "npm",
-    "settings.editor.selected.configurable": "org.jetbrains.plugins.github.ui.GithubSettingsConfigurable",
-    "to.speed.mode.migration.done": "true"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;Go Build.Build.executor&quot;: &quot;Run&quot;,
+    &quot;Go Build.go build flowapp.executor&quot;: &quot;Run&quot;,
+    &quot;Go Build.go build main.go.executor&quot;: &quot;Run&quot;,
+    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.GoLinterPluginOnboardingV2&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.GoLinterPluginStorageMigration&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.MCP Project settings loaded&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.go.analysis.ui.options.defaults&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.go.formatter.settings.were.checked&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.go.modules.go.list.on.any.changes.was.set&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.typescript.service.memoryLimit.init&quot;: &quot;true&quot;,
+    &quot;com.intellij.ml.llm.matterhorn.ej.ui.settings.DefaultModelSelectionForGA.v1&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
+    &quot;go.sdk.automatically.set&quot;: &quot;true&quot;,
+    &quot;junie.onboarding.icon.badge.shown&quot;: &quot;true&quot;,
+    &quot;last_opened_file_path&quot;: &quot;/home/dh/GolandProjects/flowapp&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;org.jetbrains.plugins.github.ui.GithubSettingsConfigurable&quot;,
+    &quot;to.speed.mode.migration.done&quot;: &quot;true&quot;
   },
-  "keyToStringList": {
-    "com.intellij.ide.scratch.ScratchImplUtil$2/New Scratch File": [
-      "Markdown"
+  &quot;keyToStringList&quot;: {
+    &quot;com.intellij.ide.scratch.ScratchImplUtil$2/New Scratch File&quot;: [
+      &quot;Markdown&quot;
     ]
   }
-}]]></component>
+}</component>
   <component name="RecentsManager">
     <key name="MoveFile.RECENT_KEYS">
       <recent name="$PROJECT_DIR$/ideas" />
@@ -147,6 +160,8 @@
     <MESSAGE value="Auth" />
     <MESSAGE value="Builder improvements" />
     <MESSAGE value="Auth and Tests" />
-    <option name="LAST_COMMIT_MESSAGE" value="Auth and Tests" />
+    <MESSAGE value="Screenshots" />
+    <MESSAGE value="Builds" />
+    <option name="LAST_COMMIT_MESSAGE" value="Builds" />
   </component>
 </project>
