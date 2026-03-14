@@ -4,7 +4,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"flowapp/internal/dsl"
-	"flowapp/internal/mailer"
 	"fmt"
 	"log"
 	"os"
@@ -52,19 +51,18 @@ type AskState struct {
 }
 
 type Instance struct {
-	ID           string                `json:"id"`
-	WorkflowName string                `json:"workflow_name"`
-	Labels       []string              `json:"labels,omitempty"`
-	Title        string                `json:"title"`
-	Priority     string                `json:"priority"`
-	CreatedAt    time.Time             `json:"created_at"`
-	UpdatedAt    time.Time             `json:"updated_at"`
-	Sections     []*SectionState       `json:"sections"`
-	Steps        map[string]*StepState `json:"-"` // O(1) lookup
-	Tokens       map[string]*StepState `json:"-"` // O(1) token lookup
-	Status       Status                `json:"status"`
-	Comments     []Comment             `json:"comments,omitempty"`
-	Audit        []AuditEntry          `json:"audit,omitempty"`
+	ID           string          `json:"id"`
+	WorkflowName string          `json:"workflow_name"`
+	Labels       []string        `json:"labels,omitempty"`
+	Title        string          `json:"title"`
+	Priority     string          `json:"priority"`
+	CreatedAt    time.Time       `json:"created_at"`
+	UpdatedAt    time.Time       `json:"updated_at"`
+	Sections     []*SectionState `json:"sections"`
+	Status       Status          `json:"status"`
+	Position     int             `json:"position"`
+	Comments     []Comment       `json:"comments,omitempty"`
+	Audit        []AuditEntry    `json:"audit,omitempty"`
 }
 
 type SectionState struct {
@@ -167,11 +165,8 @@ func (s *StepState) RequiredListBlocked() bool {
 // --- Token ---
 
 func generateToken() string {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		// Fallback for extremely rare rand failures
-		return fmt.Sprintf("%x", time.Now().UnixNano())
-	}
+	b := make([]byte, 24)
+	rand.Read(b)
 	return hex.EncodeToString(b)
 }
 
@@ -200,8 +195,6 @@ func NewInstance(id, title string, wf *dsl.Workflow) *Instance {
 		}
 	}
 
-	inst.Steps = make(map[string]*StepState)
-	inst.Tokens = make(map[string]*StepState)
 	for _, sec := range wf.Sections {
 		ss := &SectionState{Name: sec.Name}
 		for _, step := range sec.Steps {
@@ -226,7 +219,6 @@ func NewInstance(id, title string, wf *dsl.Workflow) *Instance {
 				})
 			}
 			ss.Steps = append(ss.Steps, st)
-			inst.Steps[st.Name] = st
 		}
 		inst.Sections = append(inst.Sections, ss)
 	}
@@ -271,10 +263,6 @@ func (inst *Instance) activate(s *StepState, now time.Time) {
 	if s.Gate {
 		s.Status = StatusGate
 		s.GateToken = generateToken()
-		if inst.Tokens == nil {
-			inst.Tokens = make(map[string]*StepState)
-		}
-		inst.Tokens[s.GateToken] = s
 	} else if s.Ask != nil {
 		s.Status = StatusAsk
 	} else {
@@ -353,6 +341,9 @@ func (inst *Instance) RedeemGate(token string, chosenIdx int) (*StepState, error
 	if found == nil {
 		return nil, fmt.Errorf("token not found or already used")
 	}
+	if found.DueAt != nil && time.Now().After(*found.DueAt) {
+		return nil, fmt.Errorf("approval link has expired")
+	}
 	if found.Ask == nil || chosenIdx < 0 || chosenIdx >= len(found.Ask.Targets) {
 		return nil, fmt.Errorf("invalid choice index %d", chosenIdx)
 	}
@@ -418,21 +409,6 @@ func (inst *Instance) Progress() (int, int) {
 	return done, total
 }
 
-func (inst *Instance) EnsureIndices() {
-	if inst.Steps == nil {
-		inst.Steps = make(map[string]*StepState)
-	}
-	if inst.Tokens == nil {
-		inst.Tokens = make(map[string]*StepState)
-	}
-	inst.allSteps(func(s *StepState) {
-		inst.Steps[s.Name] = s
-		if s.GateToken != "" {
-			inst.Tokens[s.GateToken] = s
-		}
-	})
-}
-
 func (inst *Instance) HasOverdue() bool {
 	found := false
 	inst.allSteps(func(s *StepState) {
@@ -450,6 +426,9 @@ func (inst *Instance) ToggleListItem(stepName, itemID string) error {
 	if s == nil {
 		return fmt.Errorf("step '%s' not found", stepName)
 	}
+	if s.Status != StatusReady && s.Status != StatusAsk && s.Status != StatusGate {
+		return fmt.Errorf("step '%s' is not active", stepName)
+	}
 	for i, li := range s.ListItems {
 		if li.ID == itemID {
 			s.ListItems[i].Checked = !s.ListItems[i].Checked
@@ -466,6 +445,9 @@ func (inst *Instance) CheckAllListItems(stepName string) {
 	if s == nil {
 		return
 	}
+	if s.Status != StatusReady && s.Status != StatusAsk && s.Status != StatusGate {
+		return
+	}
 	for i := range s.ListItems {
 		s.ListItems[i].Checked = true
 	}
@@ -478,6 +460,9 @@ func (inst *Instance) AddListItem(stepName, text string) error {
 	if s == nil {
 		return fmt.Errorf("step '%s' not found", stepName)
 	}
+	if s.Status != StatusReady && s.Status != StatusAsk && s.Status != StatusGate {
+		return fmt.Errorf("step '%s' is not active (status: %s)", stepName, s.Status)
+	}
 	id := fmt.Sprintf("d%d", time.Now().UnixNano())
 	s.ListItems = append(s.ListItems, ListItem{ID: id, Text: text, Required: false, Dynamic: true})
 	s.UpdatedAt = time.Now()
@@ -487,9 +472,16 @@ func (inst *Instance) AddListItem(stepName, text string) error {
 
 // --- Comments ---
 
-func (inst *Instance) AddComment(text string) {
+func (inst *Instance) AddComment(text string) error {
+	if inst.Status == StatusDone {
+		return fmt.Errorf("cannot add comments to a completed workflow")
+	}
+	if len(text) > 255 {
+		text = text[:255]
+	}
 	inst.Comments = append(inst.Comments, Comment{Text: text, CreatedAt: time.Now()})
 	inst.UpdatedAt = time.Now()
+	return nil
 }
 
 // --- Audit ---
@@ -502,6 +494,14 @@ func (inst *Instance) audit(action, step, note string) {
 
 // --- Helpers ---
 
+func (inst *Instance) AllStepsDue(fn func(time.Time)) {
+	inst.allSteps(func(s *StepState) {
+		if s.DueAt != nil {
+			fn(*s.DueAt)
+		}
+	})
+}
+
 func (inst *Instance) allSteps(fn func(*StepState)) {
 	for _, sec := range inst.Sections {
 		for _, s := range sec.Steps {
@@ -511,18 +511,24 @@ func (inst *Instance) allSteps(fn func(*StepState)) {
 }
 
 func (inst *Instance) findStepByName(name string) *StepState {
-	if inst.Steps == nil {
-		inst.EnsureIndices()
-	}
-	return inst.Steps[name]
+	var found *StepState
+	inst.allSteps(func(s *StepState) {
+		if s.Name == name {
+			found = s
+		}
+	})
+	return found
 }
 
 // FindStepByToken for external gate redemption
 func (inst *Instance) FindStepByToken(token string) *StepState {
-	if inst.Tokens == nil {
-		inst.EnsureIndices()
-	}
-	return inst.Tokens[token]
+	var found *StepState
+	inst.allSteps(func(s *StepState) {
+		if s.GateToken == token {
+			found = s
+		}
+	})
+	return found
 }
 
 func filterNeeds(needs []string) []string {
@@ -540,43 +546,13 @@ func fireNotify(inst *Instance, step *StepState) {
 	if step.Gate && step.GateToken != "" {
 		gateInfo = fmt.Sprintf(" | approval link: /approve/%s", step.GateToken)
 	}
-	msgText := fmt.Sprintf("[%s] NOTIFY → %s | instance: %s (%s) | step: %s%s\n",
+	msg := fmt.Sprintf("[%s] NOTIFY → %s | instance: %s (%s) | step: %s%s\n",
 		time.Now().Format(time.RFC3339), step.Notify,
 		inst.Title, inst.WorkflowName, step.Name, gateInfo)
-	log.Print(msgText)
-
-	// Log to file
+	log.Print(msg)
 	f, err := os.OpenFile("notifications.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err == nil {
 		defer f.Close()
-		f.WriteString(msgText)
-	}
-
-	// Send email
-	cfg, err := mailer.LoadConfig()
-	if err != nil {
-		log.Printf("could not load mail config: %v", err)
-		return
-	}
-
-	m, err := mailer.NewMailerFromConfig(cfg)
-	if err != nil {
-		log.Printf("could not create mailer: %v", err)
-		return
-	}
-
-	subject := fmt.Sprintf("Workflow Notification: %s", inst.Title)
-	body := fmt.Sprintf("Hello,\n\na notification was triggered in the workflow '%s' (Instance: %s).\n\nStep: %s\nTarget: %s\n%s\n\nBest regards,\nFlowApp",
-		inst.WorkflowName, inst.Title, step.Name, step.Notify, gateInfo)
-
-	err = m.Send(mailer.Message{
-		From:      cfg.From,
-		To:        strings.Split(step.Notify, ","), // Assume comma separated list
-		Subject:   subject,
-		PlainBody: body,
-	})
-
-	if err != nil {
-		log.Printf("failed to send email: %v", err)
+		f.WriteString(msg)
 	}
 }

@@ -1,7 +1,6 @@
 package web
 
 import (
-	"encoding/json"
 	"flowapp/internal/engine"
 	"flowapp/internal/store"
 	"html/template"
@@ -9,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Handler struct {
@@ -52,7 +52,12 @@ func New(s *store.Store, tmplGlob string) (*Handler, error) {
 			}
 			return r
 		},
-		"not": func(b bool) bool { return !b },
+		"not":         func(b bool) bool { return !b },
+		"hasPriority": func(d boardData, p string) bool { return containsStr(d.FilterPriorities, p) },
+		"hasLabel":    func(d boardData, l string) bool { return containsStr(d.FilterLabels, strings.ToLower(l)) },
+		"hasActiveFilters": func(d boardData) bool {
+			return d.FilterQ != "" || len(d.FilterPriorities) > 0 || len(d.FilterLabels) > 0 || d.FilterDue != "" || d.FilterCreated != ""
+		},
 		"visibleNeeds": func(needs []string) string {
 			var out []string
 			for _, n := range needs {
@@ -85,7 +90,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /instance/{id}/listitem/add", h.addListItem)
 	mux.HandleFunc("POST /instance/{id}/listitem/checkall", h.checkAllListItems)
 	// external gate approval
-	mux.HandleFunc("GET /debug/{id}", h.debug)
+	mux.HandleFunc("POST /reorder", h.reorder)
 	mux.HandleFunc("GET /approve/{token}", h.approvalPage)
 	mux.HandleFunc("POST /approve/{token}", h.approvalSubmit)
 }
@@ -109,21 +114,34 @@ type column struct {
 }
 
 type boardData struct {
-	Columns        []column
-	Definitions    []string
-	AllLabels      []string
-	FilterQ        string
-	FilterPriority string
-	FilterLabel    string
+	Columns          []column
+	Definitions      []string
+	AllLabels        []string
+	FilterQ          string
+	FilterPriorities []string
+	FilterLabels     []string
+	FilterDue        string
+	FilterCreated    string
+	Flash            string
 }
 
 func (h *Handler) board(w http.ResponseWriter, r *http.Request) {
 	q := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
-	filterPriority := r.URL.Query().Get("priority")
-	filterLabel := strings.ToLower(r.URL.Query().Get("label"))
+	filterPriorities := r.URL.Query()["priority"]
+	filterLabels := r.URL.Query()["label"]
+	filterDue := r.URL.Query().Get("due")
+	filterCreated := r.URL.Query().Get("created")
+
+	// normalize labels to lowercase
+	for i, l := range filterLabels {
+		filterLabels[i] = strings.ToLower(l)
+	}
 
 	instances := h.store.Instances()
 	sort.Slice(instances, func(i, j int) bool {
+		if instances[i].Position != instances[j].Position {
+			return instances[i].Position < instances[j].Position
+		}
 		pi, pj := priorityVal(instances[i].Priority), priorityVal(instances[j].Priority)
 		if pi != pj {
 			return pi > pj
@@ -131,6 +149,7 @@ func (h *Handler) board(w http.ResponseWriter, r *http.Request) {
 		return instances[i].CreatedAt.Before(instances[j].CreatedAt)
 	})
 
+	now := time.Now()
 	cols := map[string]*column{
 		"Todo":        {Title: "Todo"},
 		"In Progress": {Title: "In Progress"},
@@ -140,11 +159,21 @@ func (h *Handler) board(w http.ResponseWriter, r *http.Request) {
 		if q != "" && !strings.Contains(strings.ToLower(inst.Title+" "+inst.WorkflowName), q) {
 			continue
 		}
-		if filterPriority != "" && inst.Priority != filterPriority {
+		if len(filterPriorities) > 0 && !containsStr(filterPriorities, inst.Priority) {
 			continue
 		}
-		if filterLabel != "" && !hasLabel(inst.Labels, filterLabel) {
+		if len(filterLabels) > 0 && !hasAnyLabel(inst.Labels, filterLabels) {
 			continue
+		}
+		if filterDue != "" {
+			if !matchDueFilter(inst, filterDue, now) {
+				continue
+			}
+		}
+		if filterCreated != "" {
+			if !matchCreatedFilter(inst, filterCreated, now) {
+				continue
+			}
 		}
 		done, total := inst.Progress()
 		pct := 0
@@ -179,15 +208,22 @@ func (h *Handler) board(w http.ResponseWriter, r *http.Request) {
 	allLabels := h.store.AllLabels()
 	sort.Strings(allLabels)
 
+	flash := getFlash(w, r)
 	h.render(w, "board.html", boardData{
 		Columns:     []column{*cols["Todo"], *cols["In Progress"], *cols["Done"]},
 		Definitions: defNames, AllLabels: allLabels,
-		FilterQ: r.URL.Query().Get("q"), FilterPriority: filterPriority, FilterLabel: filterLabel,
+		FilterQ: r.URL.Query().Get("q"), FilterPriorities: filterPriorities, FilterLabels: filterLabels,
+		FilterDue: filterDue, FilterCreated: filterCreated, Flash: flash,
 	})
 }
 
 func (h *Handler) builder(w http.ResponseWriter, r *http.Request) {
 	h.render(w, "builder.html", nil)
+}
+
+type instanceData struct {
+	*engine.Instance
+	Flash string
 }
 
 func (h *Handler) instanceDetail(w http.ResponseWriter, r *http.Request) {
@@ -196,7 +232,7 @@ func (h *Handler) instanceDetail(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	h.render(w, "instance.html", inst)
+	h.render(w, "instance.html", instanceData{inst, getFlash(w, r)})
 }
 
 func (h *Handler) createInstance(w http.ResponseWriter, r *http.Request) {
@@ -228,7 +264,7 @@ func (h *Handler) advanceStep(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	r.ParseForm()
 	if err := h.store.AdvanceStep(id, r.FormValue("step")); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		flashError(w, r, err.Error())
 		return
 	}
 	http.Redirect(w, r, "/instance/"+id, http.StatusSeeOther)
@@ -239,7 +275,7 @@ func (h *Handler) answerAsk(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	idx, _ := strconv.Atoi(r.FormValue("choice"))
 	if err := h.store.AnswerAsk(id, r.FormValue("step"), idx); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		flashError(w, r, err.Error())
 		return
 	}
 	http.Redirect(w, r, "/instance/"+id, http.StatusSeeOther)
@@ -258,7 +294,10 @@ func (h *Handler) addComment(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	r.ParseForm()
 	if text := strings.TrimSpace(r.FormValue("text")); text != "" {
-		h.store.AddComment(id, text)
+		if err := h.store.AddComment(id, text); err != nil {
+			flashError(w, r, err.Error())
+			return
+		}
 	}
 	http.Redirect(w, r, "/instance/"+id, http.StatusSeeOther)
 }
@@ -272,7 +311,7 @@ func (h *Handler) toggleListItem(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	r.ParseForm()
 	if err := h.store.ToggleListItem(id, r.FormValue("step"), r.FormValue("item_id")); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		flashError(w, r, err.Error())
 		return
 	}
 	http.Redirect(w, r, "/instance/"+id, http.StatusSeeOther)
@@ -282,7 +321,10 @@ func (h *Handler) addListItem(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	r.ParseForm()
 	if text := strings.TrimSpace(r.FormValue("text")); text != "" {
-		h.store.AddListItem(id, r.FormValue("step"), text)
+		if err := h.store.AddListItem(id, r.FormValue("step"), text); err != nil {
+			flashError(w, r, err.Error())
+			return
+		}
 	}
 	http.Redirect(w, r, "/instance/"+id, http.StatusSeeOther)
 }
@@ -330,16 +372,34 @@ func (h *Handler) approvalSubmit(w http.ResponseWriter, r *http.Request) {
 	h.render(w, "approve.html", approvalData{Token: token, Done: true, Step: step, Instance: inst})
 }
 
-func (h *Handler) debug(w http.ResponseWriter, r *http.Request) {
-	inst, ok := h.store.Instance(r.PathValue("id"))
-	if !ok {
-		http.NotFound(w, r)
+func (h *Handler) reorder(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	ids := r.Form["ids[]"]
+	if err := h.store.ReorderInstances(ids); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	enc.Encode(inst)
+	w.WriteHeader(http.StatusOK)
+}
+
+func flashError(w http.ResponseWriter, r *http.Request, msg string) {
+	http.SetCookie(w, &http.Cookie{
+		Name: "flash_error", Value: msg, Path: "/", MaxAge: 10,
+	})
+	ref := r.Header.Get("Referer")
+	if ref == "" {
+		ref = "/"
+	}
+	http.Redirect(w, r, ref, http.StatusSeeOther)
+}
+
+func getFlash(w http.ResponseWriter, r *http.Request) string {
+	c, err := r.Cookie("flash_error")
+	if err != nil {
+		return ""
+	}
+	http.SetCookie(w, &http.Cookie{Name: "flash_error", Path: "/", MaxAge: -1})
+	return c.Value
 }
 
 func (h *Handler) render(w http.ResponseWriter, name string, data any) {
@@ -350,6 +410,65 @@ func (h *Handler) render(w http.ResponseWriter, name string, data any) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Write([]byte(buf.String()))
+}
+
+func containsStr(slice []string, s string) bool {
+	for _, v := range slice {
+		if v == s {
+			return true
+		}
+	}
+	return false
+}
+
+func hasAnyLabel(labels []string, filters []string) bool {
+	for _, f := range filters {
+		for _, l := range labels {
+			if strings.ToLower(l) == f {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func matchDueFilter(inst *engine.Instance, filter string, now time.Time) bool {
+	switch filter {
+	case "overdue":
+		return inst.HasOverdue()
+	case "today":
+		end := time.Date(now.Year(), now.Month(), now.Day(), 23, 59, 59, 0, now.Location())
+		var found bool
+		inst.AllStepsDue(func(due time.Time) {
+			if !due.After(end) && due.After(now) {
+				found = true
+			}
+		})
+		return found
+	case "7d":
+		end := now.Add(7 * 24 * time.Hour)
+		var found bool
+		inst.AllStepsDue(func(due time.Time) {
+			if due.After(now) && due.Before(end) {
+				found = true
+			}
+		})
+		return found
+	}
+	return true
+}
+
+func matchCreatedFilter(inst *engine.Instance, filter string, now time.Time) bool {
+	switch filter {
+	case "today":
+		start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+		return inst.CreatedAt.After(start)
+	case "7d":
+		return inst.CreatedAt.After(now.Add(-7 * 24 * time.Hour))
+	case "30d":
+		return inst.CreatedAt.After(now.Add(-30 * 24 * time.Hour))
+	}
+	return true
 }
 
 func priorityVal(p string) int {

@@ -79,6 +79,7 @@ func (s *Store) watchWorkflows() {
 	}
 }
 
+// Loads the workflow definitions from the workflow directory
 func (s *Store) loadDefinitions() error {
 	entries, err := os.ReadDir(s.workflowDir)
 	if err != nil {
@@ -97,8 +98,18 @@ func (s *Store) loadDefinitions() error {
 			log.Printf("parse error in %s: %v (skipping)", e.Name(), err)
 			continue
 		}
+		origName := wf.Name
+		for i := 1; ; i++ {
+			if _, dup := s.definitions[wf.Name]; !dup {
+				break
+			}
+			wf.Name = fmt.Sprintf("%s-%d", origName, i)
+		}
+		if wf.Name != origName {
+			log.Printf("[store] WARNING: duplicate name '%s' in %s — renamed to '%s'", origName, e.Name(), wf.Name)
+		}
 		s.definitions[wf.Name] = wf
-		log.Printf("[store] loaded workflow: %s", wf.Name)
+		log.Printf("[store] loaded workflow: %s (from %s)", wf.Name, e.Name())
 	}
 	return nil
 }
@@ -120,7 +131,6 @@ func (s *Store) loadInstances() error {
 		if err := json.Unmarshal(data, &inst); err != nil {
 			return err
 		}
-		inst.EnsureIndices()
 		s.instances[inst.ID] = &inst
 	}
 	log.Printf("[store] loaded %d instance(s)", len(s.instances))
@@ -346,6 +356,21 @@ func (s *Store) AddComment(id, text string) error {
 	}
 	inst.AddComment(text)
 	return s.save(inst)
+}
+
+func (s *Store) ReorderInstances(ids []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, id := range ids {
+		if inst, ok := s.instances[id]; ok {
+			inst.Position = i
+			if err := s.save(inst); err != nil {
+				return err
+			}
+		}
+	}
+	log.Printf("[store] reordered %d instances", len(ids))
+	return nil
 }
 
 func (s *Store) DeleteInstance(id string) error {

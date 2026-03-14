@@ -12,15 +12,15 @@
 </script>
 <style>
 :root {
-  --bg: #f0f2f5; --bg2: #ffffff; --bg3: #fafafa; --bg4: #f4f4f8;
-  --border: #e4e6ef; --border2: #f4f4f4;
-  --text: #1a1a2e; --text2: #555; --text3: #888; --text4: #bbb;
+  --bg: #e8eaf0; --bg2: #ffffff; --bg3: #f5f6fa; --bg4: #eeeef6;
+  --border: #d4d6e4; --border2: #ebebf2;
+  --text: #1a1a2e; --text2: #444; --text3: #777; --text4: #b0b0c0;
   --header-bg: #1a1a2e; --header-input-bg: #2a2a40;
   --accent: #6c63ff; --accent2: #574fd6;
   --green: #22c55e; --red: #ef4444; --amber: #f59e0b; --blue: #3b82f6;
-  --shadow: 0 1px 4px rgba(0,0,0,0.08);
-  --note-border: #e0e0e0; --note-bg: #fafafa;
-  --check-hover: #f4f4f8;
+  --shadow: 0 2px 8px rgba(0,0,0,0.10), 0 0 0 1px rgba(0,0,0,0.04);
+  --note-border: #d4d6e4; --note-bg: #f5f6fa;
+  --check-hover: #f0f0f8;
 }
 [data-theme="dark"] {
   --bg: #0f0f17; --bg2: #1a1a2e; --bg3: #1e1e32; --bg4: #22223a;
@@ -50,9 +50,9 @@ header h2 { font-size: 1.2rem; flex: 1; }
 .theme-btn:hover { color: white; }
 .content { padding: 2rem; max-width: 980px; margin: 0 auto; display: grid; grid-template-columns: 1fr 280px; gap: 2rem; align-items: start; }
 .sections { display: flex; flex-direction: column; gap: 1.5rem; }
-.section { background: var(--bg2); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); border: 1px solid var(--border); }
+.section { background: var(--bg2); border-radius: 10px; overflow: hidden; box-shadow: var(--shadow); border: 1px solid var(--border); }
 .section-header { background: var(--header-bg); color: white; padding: 0.6rem 1.2rem; font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; }
-.step { display: flex; align-items: flex-start; gap: 0.85rem; padding: 0.75rem 1.2rem; border-bottom: 1px solid var(--border2); }
+.step { display: flex; align-items: flex-start; gap: 0.85rem; padding: 0.65rem 1.1rem; border-bottom: 1px solid var(--border2); }
 .step:last-child { border-bottom: none; }
 .step.overdue { background: rgba(239,68,68,0.05); }
 .step.skipped { opacity: 0.4; }
@@ -85,6 +85,18 @@ header h2 { font-size: 1.2rem; flex: 1; }
 .btn-ask { background: var(--blue); color: white; }
 .btn-ask:hover { opacity: 0.85; }
 .list-blocked-hint { font-size: 0.75rem; color: var(--amber); }
+.flash-error { background: #fee2e2; color: #dc2626; border-radius: 8px; padding: 0.6rem 1rem; margin-bottom: 1rem; font-size: 0.88rem; border: 1px solid #fca5a5; }
+[data-theme="dark"] .flash-error { background: #2a1010; border-color: #7f1d1d; color: #f87171; }
+.toolbox { display: flex; gap: 0.6rem; justify-content: flex-end; margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--border); position: relative; }
+.tool-btn { padding: 0.45rem 1rem; background: var(--bg4); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; font-size: 0.88rem; color: var(--text2); display: flex; align-items: center; gap: 0.4rem; }
+.tool-btn:hover { color: var(--text); border-color: var(--accent); }
+.tool-menu { position: absolute; bottom: calc(100% + 6px); right: 0; background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 4px 16px rgba(0,0,0,0.15); min-width: 160px; overflow: hidden; display: none; z-index: 100; }
+.tool-menu.open { display: block; }
+.tool-menu-item { display: flex; align-items: center; gap: 0.6rem; padding: 0.6rem 1rem; font-size: 0.88rem; cursor: pointer; color: var(--text); background: none; border: none; width: 100%; text-align: left; }
+.tool-menu-item:hover { background: var(--bg4); }
+.tool-menu-item.danger { color: #ef4444; }
+.tool-menu-item.danger:hover { background: #fee2e2; }
+[data-theme="dark"] .tool-menu-item.danger:hover { background: #2a1010; }
 .done-banner { background: #dcfce7; color: #15803d; border-radius: 10px; padding: 1rem 1.5rem; margin-bottom: 1.5rem; font-weight: 600; }
 [data-theme="dark"] .done-banner { background: #0f2a1a; color: #4ade80; }
 /* checklist */
@@ -98,7 +110,10 @@ header h2 { font-size: 1.2rem; flex: 1; }
 .check-text { color: var(--text); }
 .check-text.checked { text-decoration: line-through; color: var(--text4); }
 .optional-tag { font-size: 0.68rem; background: var(--bg4); color: var(--text3); border-radius: 4px; padding: 0 4px; margin-left: 0.3rem; }
-.add-item-form { display: flex; gap: 0.4rem; margin-top: 0.5rem; padding-top: 0.4rem; border-top: 1px dashed var(--border); }
+.add-item-toggle { background: none; border: none; color: var(--text3); cursor: pointer; font-size: 0.82rem; padding: 0.2rem 0.4rem; border-radius: 5px; margin-top: 0.3rem; display: flex; align-items: center; gap: 0.3rem; transition: color 0.15s; }
+.add-item-toggle:hover { color: var(--accent); }
+.add-item-form { display: flex; gap: 0.4rem; margin-top: 0.3rem; padding-top: 0.4rem; border-top: 1px dashed var(--border); opacity: 0; max-height: 0; overflow: hidden; transition: opacity 0.2s, max-height 0.2s; }
+.add-item-form.open { opacity: 1; max-height: 60px; }
 .add-item-form input { flex: 1; border: 1px solid var(--border); border-radius: 6px; padding: 0.25rem 0.6rem; font-size: 0.82rem; outline: none; background: var(--bg3); color: var(--text); }
 .add-item-form input:focus { border-color: var(--accent); }
 .add-item-form button { padding: 0.25rem 0.7rem; background: var(--bg4); color: var(--accent); border: none; border-radius: 6px; cursor: pointer; font-size: 0.82rem; font-weight: 600; }
@@ -146,6 +161,7 @@ header h2 { font-size: 1.2rem; flex: 1; }
 
 <div class="content">
   <div>
+    {{if .Flash}}<div class="flash-error">⚠ {{.Flash}}</div>{{end}}
     {{if eq (print .Status) "done"}}
     <div class="done-banner">✓ Workflow complete!</div>
     {{end}}
@@ -176,8 +192,8 @@ header h2 { font-size: 1.2rem; flex: 1; }
             </div>
             {{end}}
 
-            {{if .ListItems}}
             <div class="checklist">
+              {{if .ListItems}}
               <div class="checklist-header">
                 <span style="font-size:0.75rem;color:var(--text3);">{{len .ListItems}} items</span>
                 <form method="POST" action="/instance/{{$id}}/listitem/checkall">
@@ -197,13 +213,16 @@ header h2 { font-size: 1.2rem; flex: 1; }
                 </button>
               </form>
               {{end}}
-              <form class="add-item-form" method="POST" action="/instance/{{$id}}/listitem/add">
+              {{end}}
+              {{if or (isReady .) (isAsk .) (isGate .)}}
+              <button class="add-item-toggle" onclick="toggleAddItem(this)">＋ Add item</button>
+              <form class="add-item-form" method="POST" action="/instance/{{$id}}/listitem/add" onsubmit="refocusAfterSubmit(this)">
                 <input type="hidden" name="step" value="{{$step.Name}}">
-                <input type="text" name="text" placeholder="+ Add item…">
+                <input type="text" name="text" placeholder="Item text…" onkeydown="if(event.key==='Enter'){event.preventDefault();this.closest('form').requestSubmit();}">
                 <button type="submit">Add</button>
               </form>
+              {{end}}
             </div>
-            {{end}}
 
             {{if isReady .}}
             <div class="step-actions">
@@ -240,14 +259,19 @@ header h2 { font-size: 1.2rem; flex: 1; }
       {{end}}
     </div>
 
-    <div class="actions">
+    <div class="toolbox">
       <a class="btn-back" href="/">← Board</a>
-      <form method="POST" action="/instance/{{.ID}}/clone">
-        <button class="btn-clone" type="submit">⎘ Clone</button>
-      </form>
-      <form method="POST" action="/instance/{{.ID}}/delete" onsubmit="return confirm('Delete instance?')">
-        <button class="btn-delete" type="submit">Delete</button>
-      </form>
+      <div style="position:relative;">
+        <button class="tool-btn" onclick="toggleToolMenu(this)">⚙ Actions ▾</button>
+        <div class="tool-menu" id="toolMenu">
+          <form method="POST" action="/instance/{{.ID}}/clone">
+            <button type="submit" class="tool-menu-item">⎘ Clone as new</button>
+          </form>
+          <form method="POST" action="/instance/{{.ID}}/delete" onsubmit="return confirm('Delete this instance?')">
+            <button type="submit" class="tool-menu-item danger">🗑 Delete</button>
+          </form>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -298,15 +322,70 @@ header h2 { font-size: 1.2rem; flex: 1; }
         <div class="comment-time">{{.CreatedAt.Format "02.01.2006 15:04"}}</div>
       </div>
       {{end}}
+      {{if ne (print .Status) "done"}}
       <form class="comment-form" method="POST" action="/instance/{{.ID}}/comment">
-        <textarea name="text" placeholder="Add a comment…"></textarea>
+        <textarea name="text" placeholder="Add a comment… (max 255)" maxlength="255"></textarea>
         <button type="submit">Send</button>
       </form>
+      {{end}}
     </div>
   </div>
 </div>
 
 <script>
+function toggleAddItem(btn) {
+  const form = btn.nextElementSibling;
+  const opening = !form.classList.contains('open');
+  form.classList.toggle('open', opening);
+  btn.style.color = opening ? 'var(--accent)' : '';
+  if (opening) {
+    const inp = form.querySelector('input[name="text"]');
+    if (inp) setTimeout(() => inp.focus(), 210);
+  }
+}
+
+function refocusAfterSubmit(form) {
+  const stepInput = form.querySelector('input[name="step"]');
+  if (stepInput) sessionStorage.setItem('focusStep', stepInput.value);
+}
+
+// on page load, restore focus to the right add-item input
+window.addEventListener('DOMContentLoaded', () => {
+  const step = sessionStorage.getItem('focusStep');
+  if (!step) return;
+  sessionStorage.removeItem('focusStep');
+  // find the add-item input for this step
+  document.querySelectorAll('.add-item-form').forEach(form => {
+    const s = form.querySelector('input[name="step"]');
+    if (s && s.value === step) {
+      const inp = form.querySelector('input[name="text"]');
+      if (inp) {
+        form.classList.add('open');
+        const tog = form.previousElementSibling;
+        if (tog) tog.style.color = 'var(--accent)';
+        inp.focus();
+        inp.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      }
+    }
+  });
+});
+
+function toggleToolMenu(btn) {
+  const menu = document.getElementById('toolMenu');
+  menu.classList.toggle('open');
+  // close on outside click
+  if (menu.classList.contains('open')) {
+    setTimeout(() => {
+      document.addEventListener('click', function close(e) {
+        if (!menu.contains(e.target) && e.target !== btn) {
+          menu.classList.remove('open');
+        }
+        document.removeEventListener('click', close);
+      });
+    }, 0);
+  }
+}
+
 function toggleTheme() {
   const html = document.documentElement;
   const next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';

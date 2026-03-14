@@ -13,15 +13,15 @@
 </script>
 <style>
 :root {
-  --bg: #f0f2f5; --bg2: #ffffff; --bg3: #f8f9fb;
-  --border: #e4e6ef; --border2: #e0e0e0;
-  --text: #1a1a2e; --text2: #666; --text3: #aaa;
+  --bg: #e8eaf0; --bg2: #ffffff; --bg3: #f3f4f8;
+  --border: #d4d6e4; --border2: #dcdde8;
+  --text: #1a1a2e; --text2: #444; --text3: #888;
   --header-bg: #1a1a2e; --header-input-bg: #2a2a40; --header-input-border: #3a3a55;
   --accent: #6c63ff; --accent2: #574fd6;
-  --card-shadow: 0 1px 4px rgba(0,0,0,0.08);
-  --card-shadow-hover: 0 4px 16px rgba(0,0,0,0.12);
-  --chip-label-bg: #f0eeff; --chip-label-color: #6c63ff;
-  --progress-bg: #f0f0f0;
+  --card-shadow: 0 2px 8px rgba(0,0,0,0.10), 0 0 0 1px rgba(0,0,0,0.04);
+  --card-shadow-hover: 0 6px 20px rgba(0,0,0,0.15);
+  --chip-label-bg: #eeeaff; --chip-label-color: #5b52e0;
+  --progress-bg: #e4e4ef;
 }
 [data-theme="dark"] {
   --bg: #0f0f17; --bg2: #1a1a2e; --bg3: #22223a;
@@ -47,11 +47,8 @@ header a.builder-link { color: var(--accent); text-decoration: none; font-size: 
 .new-form select option { background: #1a1a2e; }
 .new-form button { background: var(--accent); color: white; border: none; border-radius: 7px; padding: 0.38rem 1.1rem; cursor: pointer; font-size: 0.88rem; font-weight: 600; }
 .new-form button:hover { background: var(--accent2); }
-.filter-bar { background: var(--bg2); padding: 0.6rem 2rem; display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; border-bottom: 1px solid var(--border); }
-.filter-bar form { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; flex: 1; }
-.filter-bar input[type=text] { border: 1.5px solid var(--border); border-radius: 7px; padding: 0.3rem 0.75rem; font-size: 0.85rem; outline: none; background: var(--bg3); color: var(--text); min-width: 180px; }
-.filter-bar input[type=text]:focus { border-color: var(--accent); }
-.chip { display: inline-block; padding: 0.2rem 0.65rem; border-radius: 20px; font-size: 0.75rem; font-weight: 600; cursor: pointer; border: 1.5px solid transparent; text-decoration: none; transition: all 0.15s; }
+.filter-bar { background: var(--bg3); padding: 0.55rem 1.5rem; display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; border-bottom: 1px solid var(--border); }
+.chip { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.22rem 0.65rem; border-radius: 20px; font-size: 0.75rem; font-weight: 600; cursor: pointer; border: 1.5px solid transparent; text-decoration: none; transition: all 0.15s; white-space: nowrap; }
 .chip.priority-high   { background: #fee2e2; color: #dc2626; }
 .chip.priority-medium { background: #fef3c7; color: #d97706; }
 .chip.priority-low    { background: #f1f5f9; color: #64748b; }
@@ -59,9 +56,35 @@ header a.builder-link { color: var(--accent); text-decoration: none; font-size: 
 [data-theme="dark"] .chip.priority-medium { background: #3a2e10; color: #fbbf24; }
 [data-theme="dark"] .chip.priority-low    { background: #1e2535; color: #94a3b8; }
 .chip.label-chip { background: var(--chip-label-bg); color: var(--chip-label-color); }
+.chip.due-chip   { background: #fef3c7; color: #b45309; }
+[data-theme="dark"] .chip.due-chip { background: #2a1f00; color: #fbbf24; }
+.chip.created-chip { background: #f0fdf4; color: #15803d; }
+[data-theme="dark"] .chip.created-chip { background: #052e16; color: #4ade80; }
 .chip.active { border-color: currentColor; }
-.chip-clear { font-size: 0.8rem; color: var(--text3); text-decoration: none; padding: 0.2rem 0.4rem; }
-.chip-clear:hover { color: var(--text); }
+.chip .chip-x { font-size: 0.7rem; opacity: 0.6; margin-left: 0.1rem; }
+.chip .chip-x:hover { opacity: 1; }
+.filter-sep { width: 1px; height: 18px; background: var(--border); flex-shrink: 0; }
+.filter-search { border: 1.5px solid var(--border); border-radius: 7px; padding: 0.3rem 0.7rem; font-size: 0.85rem; outline: none; background: var(--bg3); color: var(--text); width: 180px; transition: border-color 0.15s, width 0.2s; }
+.filter-search:focus { border-color: var(--accent); width: 240px; }
+.filter-group { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; }
+.filter-label { font-size: 0.68rem; color: var(--text3); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
+.filter-clear { font-size: 0.8rem; color: var(--text3); text-decoration: none; padding: 0.2rem 0.5rem; border-radius: 5px; border: 1px solid var(--border); background: var(--bg3); }
+.filter-clear:hover { color: var(--text); }
+.filter-cli-btn { font-size: 0.78rem; font-family: monospace; background: var(--bg3); border: 1.5px solid var(--border); color: var(--text3); border-radius: 6px; padding: 0.25rem 0.65rem; cursor: pointer; margin-left: auto; white-space: nowrap; }
+.filter-cli-btn:hover, .filter-cli-btn.active { border-color: var(--accent); color: var(--accent); }
+/* CLI overlay */
+.cli-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 1000; align-items: flex-start; justify-content: center; padding-top: 12vh; }
+.cli-overlay.open { display: flex; }
+.cli-box { background: var(--bg2); border-radius: 14px; box-shadow: 0 16px 48px rgba(0,0,0,0.35); width: 600px; max-width: 95vw; overflow: hidden; border: 1px solid var(--border); }
+.cli-input-row { display: flex; align-items: center; gap: 0.75rem; padding: 0.9rem 1.1rem; border-bottom: 1px solid var(--border); }
+.cli-prompt { font-family: monospace; font-size: 1rem; color: var(--accent); font-weight: 700; flex-shrink: 0; }
+.cli-input { flex: 1; border: none; outline: none; font-family: monospace; font-size: 0.95rem; background: transparent; color: var(--text); }
+.cli-hint { font-size: 0.72rem; color: var(--text3); padding: 0.5rem 1.1rem; font-family: monospace; }
+.cli-suggestions { max-height: 220px; overflow-y: auto; }
+.cli-suggestion { display: flex; align-items: center; gap: 0.6rem; padding: 0.5rem 1.1rem; cursor: pointer; font-size: 0.88rem; }
+.cli-suggestion:hover, .cli-suggestion.selected { background: var(--bg4); }
+.cli-suggestion .s-token { font-family: monospace; font-weight: 700; color: var(--accent); font-size: 0.85rem; min-width: 120px; }
+.cli-suggestion .s-desc { color: var(--text3); font-size: 0.8rem; }
 .board { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; padding: 2rem; align-items: start; }
 .column-title { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text3); margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.5rem; }
 .col-count { background: var(--bg3); border-radius: 10px; padding: 1px 8px; font-size: 0.72rem; color: var(--text2); border: 1px solid var(--border); }
@@ -85,6 +108,15 @@ header a.builder-link { color: var(--accent); text-decoration: none; font-size: 
 .priority-dot.high   { background: #dc2626; }
 .priority-dot.medium { background: #d97706; }
 .priority-dot.low    { background: #94a3b8; }
+.flash-error { background: #fee2e2; color: #dc2626; border-radius: 8px; padding: 0.6rem 1.2rem; margin: 0.75rem 2rem 0; font-size: 0.88rem; border: 1px solid #fca5a5; }
+[data-theme="dark"] .flash-error { background: #2a1010; border-color: #7f1d1d; color: #f87171; }
+.card-drag-handle { position: absolute; left: 0; top: 0; bottom: 0; width: 18px; display: flex; align-items: center; justify-content: center; color: var(--text3); font-size: 0.75rem; cursor: grab; border-radius: 12px 0 0 12px; opacity: 0; transition: opacity 0.15s; }
+.card:hover .card-drag-handle { opacity: 1; }
+.card { position: relative; padding-left: 1.5rem; }
+.card { position: relative; }
+.card.dragging { opacity: 0.35; }
+.card-drop-zone { height: 5px; border-radius: 3px; margin: 2px 0; transition: all 0.12s; }
+.card-drop-zone.drag-over { height: 48px; background: var(--chip-label-bg); border: 2px dashed var(--accent); border-radius: 10px; }
 </style>
 </head>
 <body>
@@ -97,7 +129,10 @@ header a.builder-link { color: var(--accent); text-decoration: none; font-size: 
       <option value="" disabled selected>Workflow…</option>
       {{range .Definitions}}<option value="{{.}}">{{.}}</option>{{end}}
     </select>
-    <input type="text" name="title" placeholder="Instance title…">
+    <div style="display:flex;gap:0.3rem;align-items:center;">
+      <input type="text" name="title" id="titleInput" placeholder="Instance title…">
+      <button type="button" onclick="randomTitle()" title="Generate random name" style="background:var(--inp-bg);border:1px solid var(--inp-border);color:#aaa;border-radius:7px;padding:0.38rem 0.6rem;cursor:pointer;font-size:0.9rem;flex-shrink:0;">⚄</button>
+    </div>
     <select name="priority">
       <option value="">Priority…</option>
       <option value="low">Low</option>
@@ -108,36 +143,100 @@ header a.builder-link { color: var(--accent); text-decoration: none; font-size: 
   </form>
 </header>
 
-<div class="filter-bar">
-  <form method="GET" action="/">
-    <input type="text" name="q" value="{{.FilterQ}}" placeholder="Search…">
+<div class="filter-bar" id="filterBar">
+  <!-- Search -->
+  <input type="text" class="filter-search" id="searchInput" placeholder="🔍 Search…"
+    value="{{.FilterQ}}">
+
+  <div class="filter-sep"></div>
+
+  <!-- Priority chips -->
+  <div class="filter-group">
+    <span class="filter-label">Priority</span>
     {{range $p := (iterate 3)}}
       {{$priority := index (slice "high" "medium" "low") $p}}
-      <a href="?priority={{$priority}}{{if $.FilterLabel}}&label={{$.FilterLabel}}{{end}}{{if $.FilterQ}}&q={{$.FilterQ}}{{end}}"
-         class="chip priority-{{$priority}}{{if eq $.FilterPriority $priority}} active{{end}}">
-        {{$priority}}
+      <a class="chip priority-{{$priority}}{{if hasPriority $ $priority}} active{{end}}"
+         onclick="toggleFilter('priority','{{$priority}}');return false;" href="#">
+        {{$priority}}{{if hasPriority $ $priority}}<span class="chip-x" onclick="removeFilter('priority','{{$priority}}');return false;">✕</span>{{end}}
       </a>
     {{end}}
+  </div>
+
+  <div class="filter-sep"></div>
+
+  <!-- Label chips -->
+  {{if .AllLabels}}
+  <div class="filter-group">
+    <span class="filter-label">Labels</span>
     {{range .AllLabels}}
-    <a href="?label={{.}}{{if $.FilterPriority}}&priority={{$.FilterPriority}}{{end}}{{if $.FilterQ}}&q={{$.FilterQ}}{{end}}"
-       class="chip label-chip{{if eq $.FilterLabel .}} active{{end}}">
-      {{.}}
+    <a class="chip label-chip{{if hasLabel $ .}} active{{end}}"
+       onclick="toggleFilter('label','{{.}}');return false;" href="#">
+      {{.}}{{if hasLabel $ .}}<span class="chip-x" onclick="removeFilter('label','{{.}}');return false;">✕</span>{{end}}
     </a>
     {{end}}
-    {{if or .FilterQ .FilterPriority .FilterLabel}}
-    <a href="/" class="chip-clear">✕ clear</a>
+  </div>
+  <div class="filter-sep"></div>
+  {{end}}
+
+  <!-- Due filter -->
+  <div class="filter-group">
+    <span class="filter-label">Due</span>
+    {{range $d := (iterate 3)}}
+      {{$due := index (slice "overdue" "today" "7d") $d}}
+      <a class="chip due-chip{{if eq $.FilterDue $due}} active{{end}}"
+         onclick="setSingle('due','{{$due}}');return false;" href="#">
+        {{$due}}{{if eq $.FilterDue $due}}<span class="chip-x" onclick="setSingle('due','');return false;">✕</span>{{end}}
+      </a>
     {{end}}
-  </form>
+  </div>
+
+  <div class="filter-sep"></div>
+
+  <!-- Created filter -->
+  <div class="filter-group">
+    <span class="filter-label">Created</span>
+    {{range $d := (iterate 3)}}
+      {{$cr := index (slice "today" "7d" "30d") $d}}
+      <a class="chip created-chip{{if eq $.FilterCreated $cr}} active{{end}}"
+         onclick="setSingle('created','{{$cr}}');return false;" href="#">
+        {{$cr}}{{if eq $.FilterCreated $cr}}<span class="chip-x" onclick="setSingle('created','');return false;">✕</span>{{end}}
+      </a>
+    {{end}}
+  </div>
+
+  {{if hasActiveFilters $}}
+  <a href="/" class="filter-clear">✕ clear all</a>
+  {{end}}
+
+  <button class="filter-cli-btn" id="cliBtnOpen" onclick="openCLI()">⌨ CLI</button>
 </div>
 
+<!-- CLI overlay -->
+<div class="cli-overlay" id="cliOverlay" onclick="closeCLIIfOutside(event)">
+  <div class="cli-box">
+    <div class="cli-input-row">
+      <span class="cli-prompt">›</span>
+      <input class="cli-input" id="cliInput" placeholder="finance priority:high due:7d …" autocomplete="off"
+        oninput="cliUpdate()" onkeydown="cliKey(event)">
+    </div>
+    <div class="cli-hint">Labels, priority:high/medium/low, due:overdue/today/7d, created:today/7d/30d, free text</div>
+    <div class="cli-suggestions" id="cliSuggestions"></div>
+  </div>
+</div>
+
+{{if .Flash}}<div class="flash-error">⚠ {{.Flash}}</div>{{end}}
 <div class="board">
-  {{range .Columns}}
+  {{range $col, $column := .Columns}}
   <div class="column">
     <div class="column-title">
-      {{.Title}} <span class="col-count">{{len .Cards}}</span>
+      {{$column.Title}} <span class="col-count">{{len $column.Cards}}</span>
     </div>
-    {{range .Cards}}
-    <div class="card {{.Priority}}{{if .IsDone}} done-card{{end}}" onclick="location='/instance/{{.ID}}'">
+    <div class="card-drop-zone" data-col="{{$col}}" data-before="__start__"></div>
+    {{range $column.Cards}}
+    <div class="card {{.Priority}}{{if .IsDone}} done-card{{end}}"
+         data-id="{{.ID}}" data-col="{{$col}}"
+         onclick="cardClick(event, '/instance/{{.ID}}')">
+      <div class="card-drag-handle" title="Drag to reorder">⠿</div>
       <div class="card-title">{{.Title}}</div>
       <div class="card-wf">{{.WorkflowName}}</div>
       {{if .Labels}}
@@ -156,12 +255,293 @@ header a.builder-link { color: var(--accent); text-decoration: none; font-size: 
         </span>
       </div>
     </div>
+    <div class="card-drop-zone" data-col="{{$col}}" data-after="{{.ID}}"></div>
     {{end}}
   </div>
   {{end}}
 </div>
 
 <script>
+// ── Board Drag & Drop (same approach as builder: pointer-events + getBoundingClientRect) ──
+let dragging = null; // { cardEl, id, ghost }
+let dropTarget = null; // zone dataset.after value
+
+// attach mousedown to each card
+function initCards() {
+  document.querySelectorAll('.card[data-id]').forEach(card => {
+    card.addEventListener('mousedown', e => {
+      if (e.button !== 0) return;
+      if (!e.target.closest('.card-drag-handle')) return;
+      e.preventDefault();
+      const r = card.getBoundingClientRect();
+      const ghost = card.cloneNode(true);
+      ghost.id = 'cardGhost';
+      ghost.style.cssText = `position:fixed;pointer-events:none;z-index:9999;
+        width:${r.width}px;opacity:0.88;box-shadow:0 8px 24px rgba(0,0,0,0.25);
+        transform:rotate(1.5deg);left:${e.clientX - r.width/2}px;top:${e.clientY-20}px;
+        border-radius:12px;`;
+      document.body.appendChild(ghost);
+      card.classList.add('dragging');
+      dragging = { cardEl: card, id: card.dataset.id, ghost };
+    });
+    // click navigation — only if no drag happened
+    card.addEventListener('click', e => {
+      if (dragging) return;
+      location = '/instance/' + card.dataset.id;
+    });
+  });
+}
+
+document.addEventListener('mousemove', e => {
+  if (!dragging) return;
+  const g = dragging.ghost;
+  const w = parseFloat(g.style.width);
+  g.style.left = (e.clientX - w/2) + 'px';
+  g.style.top  = (e.clientY - 20)  + 'px';
+  // hit-test drop zones via getBoundingClientRect
+  dropTarget = null;
+  document.querySelectorAll('.card-drop-zone').forEach(z => {
+    const r = z.getBoundingClientRect();
+    const hit = e.clientX >= r.left && e.clientX <= r.right
+             && e.clientY >= r.top - 14 && e.clientY <= r.bottom + 14;
+    z.classList.toggle('drag-over', hit);
+    if (hit) dropTarget = z;
+  });
+});
+
+document.addEventListener('mouseup', e => {
+  if (!dragging) return;
+  dragging.ghost.remove();
+  dragging.cardEl.classList.remove('dragging');
+  clearZones();
+  if (dropTarget) commitDrop(dropTarget);
+  dragging = null;
+  dropTarget = null;
+});
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && dragging) {
+    dragging.ghost.remove();
+    dragging.cardEl.classList.remove('dragging');
+    clearZones();
+    dragging = null; dropTarget = null;
+  }
+});
+
+function clearZones() {
+  document.querySelectorAll('.card-drop-zone.drag-over').forEach(z => z.classList.remove('drag-over'));
+}
+
+function commitDrop(zone) {
+  const col = zone.closest('.column');
+  const dragId = dragging.id;
+  const afterId = zone.dataset.after;
+
+  // reorder in DOM
+  if (!afterId || afterId === '__start__') {
+    const firstZone = col.querySelector('.card-drop-zone');
+    firstZone.after(dragging.cardEl);
+  } else {
+    const afterCard = col.querySelector(`.card[data-id="${afterId}"]`);
+    if (afterCard) afterCard.after(dragging.cardEl);
+  }
+
+  // build ordered id list for this column
+  const colCards = [...col.querySelectorAll('.card[data-id]')];
+  const colIds = colCards.map(c => c.dataset.id);
+
+  // other columns unchanged
+  const thisSet = new Set(colIds);
+  const otherIds = [...document.querySelectorAll('.card[data-id]')]
+    .filter(c => !thisSet.has(c.dataset.id))
+    .map(c => c.dataset.id);
+
+  const allIds = [...colIds, ...otherIds];
+  fetch('/reorder', { method:'POST', body: new URLSearchParams(allIds.map(id => ['ids[]', id])) });
+}
+
+initCards();
+
+// ── Filter helpers ──
+function getParams() { return new URLSearchParams(window.location.search); }
+
+function applyFilter(key, val) {
+  const p = getParams();
+  if (val) p.set(key, val); else p.delete(key);
+  window.location = '/?' + p.toString();
+}
+
+function toggleFilter(key, val) {
+  const p = getParams();
+  const existing = p.getAll(key);
+  const next = existing.includes(val)
+    ? existing.filter(v => v !== val)
+    : [...existing, val];
+  p.delete(key);
+  next.forEach(v => p.append(key, v));
+  window.location = '/?' + p.toString();
+}
+
+function removeFilter(key, val) {
+  toggleFilter(key, val); // same logic
+}
+
+function setSingle(key, val) {
+  const p = getParams();
+  if (!val || p.get(key) === val) p.delete(key); // toggle off if same value
+  else p.set(key, val);
+  window.location = '/?' + p.toString();
+}
+
+// search: only navigate on Enter or after 800ms idle (not every keystroke)
+let _searchTimer;
+document.getElementById('searchInput').addEventListener('input', function() {
+  clearTimeout(_searchTimer);
+  _searchTimer = setTimeout(() => applyFilter('q', this.value.trim()), 800);
+});
+document.getElementById('searchInput').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') { clearTimeout(_searchTimer); applyFilter('q', this.value.trim()); }
+  if (e.key === 'Escape') { clearTimeout(_searchTimer); this.value = ''; applyFilter('q', ''); }
+});
+
+// ── CLI ──
+const CLI_TOKENS = [
+  { token: 'priority:high',    desc: 'Filter by high priority' },
+  { token: 'priority:medium',  desc: 'Filter by medium priority' },
+  { token: 'priority:low',     desc: 'Filter by low priority' },
+  { token: 'due:overdue',      desc: 'Show overdue instances' },
+  { token: 'due:today',        desc: 'Due today' },
+  { token: 'due:7d',           desc: 'Due within 7 days' },
+  { token: 'created:today',    desc: 'Created today' },
+  { token: 'created:7d',       desc: 'Created in last 7 days' },
+  { token: 'created:30d',      desc: 'Created in last 30 days' },
+  // labels injected from server below
+];
+
+// inject labels as CLI tokens
+const _labels = document.querySelectorAll('.chip.label-chip');
+_labels.forEach(c => {
+  const lbl = c.textContent.trim().replace(/✕/g,'').trim();
+  CLI_TOKENS.push({ token: lbl, desc: 'Label filter' });
+});
+
+let _cliSel = -1;
+
+function openCLI() {
+  document.getElementById('cliOverlay').classList.add('open');
+  document.getElementById('cliBtnOpen').classList.add('active');
+  setTimeout(() => document.getElementById('cliInput').focus(), 50);
+  cliUpdate();
+}
+
+function closeCLI() {
+  document.getElementById('cliOverlay').classList.remove('open');
+  document.getElementById('cliBtnOpen').classList.remove('active');
+  _cliSel = -1;
+}
+
+function closeCLIIfOutside(e) {
+  if (e.target === document.getElementById('cliOverlay')) closeCLI();
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeCLI();
+});
+
+function cliUpdate() {
+  const val = document.getElementById('cliInput').value;
+  const words = val.split(/\s+/);
+  const last = words[words.length - 1].toLowerCase();
+  const suggs = last.length === 0 ? CLI_TOKENS :
+    CLI_TOKENS.filter(t => t.token.toLowerCase().startsWith(last) && !words.slice(0,-1).includes(t.token));
+  _cliSel = -1;
+  const box = document.getElementById('cliSuggestions');
+  box.innerHTML = '';
+  suggs.slice(0, 8).forEach((s, i) => {
+    const div = document.createElement('div');
+    div.className = 'cli-suggestion';
+    div.innerHTML = `<span class="s-token">${s.token}</span><span class="s-desc">${s.desc}</span>`;
+    div.addEventListener('mousedown', e => { e.preventDefault(); insertToken(s.token); });
+    box.appendChild(div);
+  });
+}
+
+function cliKey(e) {
+  const suggs = document.querySelectorAll('.cli-suggestion');
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    _cliSel = Math.min(_cliSel + 1, suggs.length - 1);
+    suggs.forEach((s, i) => s.classList.toggle('selected', i === _cliSel));
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    _cliSel = Math.max(_cliSel - 1, -1);
+    suggs.forEach((s, i) => s.classList.toggle('selected', i === _cliSel));
+  } else if (e.key === 'Tab' || (e.key === 'Enter' && _cliSel >= 0)) {
+    e.preventDefault();
+    if (_cliSel >= 0 && suggs[_cliSel]) {
+      const token = suggs[_cliSel].querySelector('.s-token').textContent;
+      insertToken(token);
+    }
+  } else if (e.key === 'Enter' && _cliSel < 0) {
+    e.preventDefault();
+    applyCLI();
+  }
+}
+
+function insertToken(token) {
+  const inp = document.getElementById('cliInput');
+  const words = inp.value.split(/\s+/).filter(Boolean);
+  // replace last partial word
+  const last = words[words.length - 1] || '';
+  if (token.toLowerCase().startsWith(last.toLowerCase()) && last.length > 0) {
+    words[words.length - 1] = token;
+  } else {
+    words.push(token);
+  }
+  inp.value = words.join(' ') + ' ';
+  inp.focus();
+  cliUpdate();
+}
+
+function applyCLI() {
+  const val = document.getElementById('cliInput').value.trim();
+  const p = new URLSearchParams();
+  const words = val.split(/\s+/).filter(Boolean);
+  const free = [];
+  words.forEach(w => {
+    if (w.startsWith('priority:')) p.append('priority', w.split(':')[1]);
+    else if (w.startsWith('due:'))      p.set('due', w.split(':')[1]);
+    else if (w.startsWith('created:'))  p.set('created', w.split(':')[1]);
+    else if (w.includes(':'))           {} // unknown, ignore
+    else                                free.push(w); // treat as label or text
+  });
+  // try labels first, rest as free text
+  const knownLabels = [...document.querySelectorAll('.chip.label-chip')]
+    .map(c => c.textContent.trim().replace(/✕/g,'').trim().toLowerCase());
+  free.forEach(w => {
+    if (knownLabels.includes(w.toLowerCase())) p.append('label', w.toLowerCase());
+    else p.set('q', (p.get('q') ? p.get('q') + ' ' : '') + w);
+  });
+  closeCLI();
+  window.location = '/?' + p.toString();
+}
+
+const _adj = ["golden","silbern","sanft","kühn","rasch","still","wild","klar","tief","weit","rein","frei","frisch","stark","weise","dunkel","hell","offen","scharf","leise","zart","schlicht","eben","grad","jung","alt","groß","klein","warm","kalt","bitter"];
+const _noun = ["Fuchs","Kranich","Kiefer","Eiche","Fluss","Stein","Morgen","Abend","Grat","Küste","Glut","Frost","Zeder","Bach","Fels","Hafen","Tal","Gipfel","Kamm","Hain","Moor","Klippe","Insel","Lichtung","Heide","Furt","Ebene","Bucht","Riff","Forst"];
+const _mod = ["alpha","beta","echo","delta","nova","null","prima","meta","kern","bogen","apex","basis","rand","knoten","fluss","gitter","pfad","kreis","tor","hub","weg","pfad"];
+
+function randomTitle() {
+  const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+  const style = Math.floor(Math.random() * 3);
+  let name;
+  if (style === 0)      name = pick(_adj) + " " + pick(_noun);
+  else if (style === 1) name = pick(_noun) + "-" + pick(_mod);
+  else                  name = pick(_adj) + " " + pick(_noun) + " " + pick(_mod);
+  const inp = document.getElementById('titleInput');
+  inp.value = name.charAt(0).toUpperCase() + name.slice(1);
+  inp.focus();
+}
+
 function toggleTheme() {
   const html = document.documentElement;
   const next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
