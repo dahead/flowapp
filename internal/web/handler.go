@@ -9,6 +9,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -76,7 +77,7 @@ func New(s *store.Store, users *auth.UserStore, tmplGlob string) (*Handler, erro
 		"hasPriority": func(d boardData, p string) bool { return containsStr(d.FilterPriorities, p) },
 		"hasLabel":    func(d boardData, l string) bool { return containsStr(d.FilterLabels, strings.ToLower(l)) },
 		"hasActiveFilters": func(d boardData) bool {
-			return d.FilterQ != "" || len(d.FilterPriorities) > 0 || len(d.FilterLabels) > 0 || d.FilterDue != "" || d.FilterCreated != ""
+			return d.FilterQ != "" || len(d.FilterPriorities) > 0 || len(d.FilterLabels) > 0 || d.FilterDue != "" || d.FilterCreated != "" || d.FilterAssign != ""
 		},
 		"roleLabel": func(r auth.Role) string {
 			switch r {
@@ -113,6 +114,26 @@ func New(s *store.Store, users *auth.UserStore, tmplGlob string) (*Handler, erro
 			return circ - (float64(done)/float64(total))*circ
 		},
 		"canWrite": func(u *auth.User) bool { return u != nil && u.CanWrite() },
+		// canDoStep: user can act on a step — must have write access AND either:
+		// the step has no assign, OR the user is admin, OR the user matches the assign.
+		"canDoStep": func(u *auth.User, s *engine.StepState) bool {
+			if u == nil || !u.CanWrite() {
+				return false
+			}
+			if u.CanAdmin() || s.Assign == "" {
+				return true
+			}
+			// match user:<name> or email or name
+			if s.Assign == "user:"+u.Name || s.Assign == u.Name || s.Assign == u.Email {
+				return true
+			}
+			// match role:<rolename>
+			if strings.HasPrefix(s.Assign, "role:") {
+				roleName := strings.TrimPrefix(s.Assign, "role:")
+				return slices.Contains(u.AppRoles, roleName)
+			}
+			return false
+		},
 	}).ParseGlob(tmplGlob)
 	if err != nil {
 		return nil, err
@@ -177,6 +198,8 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /login", h.loginPage)
 	mux.HandleFunc("POST /login", h.loginSubmit)
 	mux.HandleFunc("POST /logout", h.logout)
+	mux.HandleFunc("GET /profile", h.requireAuth(h.profilePage))
+	mux.HandleFunc("POST /profile", h.requireAuth(h.profileSave))
 	// app (auth required)
 	mux.HandleFunc("GET /", h.requireAuth(h.board))
 	mux.HandleFunc("GET /builder", h.requireAuth(h.builder))
@@ -327,6 +350,7 @@ type boardData struct {
 	FilterDue        string
 	FilterCreated    string
 	FilterSort       string
+	FilterAssign     string
 	Flash            string
 	CurrentUser      *auth.User
 }
@@ -339,6 +363,7 @@ func (h *Handler) board(w http.ResponseWriter, r *http.Request) {
 	filterDue := r.URL.Query().Get("due")
 	filterCreated := r.URL.Query().Get("created")
 	filterSort := r.URL.Query().Get("sort")
+	filterAssign := r.URL.Query().Get("assign") // "me" or explicit value
 	for i, l := range filterLabels {
 		filterLabels[i] = strings.ToLower(l)
 	}
@@ -391,6 +416,9 @@ func (h *Handler) board(w http.ResponseWriter, r *http.Request) {
 		if filterCreated != "" && !matchCreatedFilter(inst, filterCreated, now) {
 			continue
 		}
+		if filterAssign != "" && !matchAssignFilter(inst, filterAssign, u) {
+			continue
+		}
 		done, total := inst.Progress()
 		pct := 0
 		if total > 0 {
@@ -430,7 +458,8 @@ func (h *Handler) board(w http.ResponseWriter, r *http.Request) {
 		Definitions: defNames, AllLabels: allLabels,
 
 		FilterQ: r.URL.Query().Get("q"), FilterPriorities: filterPriorities,
-		FilterLabels: filterLabels, FilterDue: filterDue, FilterCreated: filterCreated, FilterSort: filterSort,
+		FilterLabels: filterLabels, FilterDue: filterDue, FilterCreated: filterCreated,
+		FilterSort: filterSort, FilterAssign: filterAssign,
 		Flash: flash, CurrentUser: u,
 	})
 }
@@ -556,7 +585,16 @@ func (h *Handler) editInstance(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) advanceStep(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	r.ParseForm()
-	if err := h.store.AdvanceStep(id, r.FormValue("step")); err != nil {
+	stepName := r.FormValue("step")
+	u := h.currentUser(r)
+	if inst, ok := h.store.Instance(id); ok {
+		if s := inst.StepByName(stepName); s != nil && !userCanDoStep(u, s) {
+			flashError(w, r, "Keine Berechtigung für diesen Schritt.")
+			http.Redirect(w, r, "/instance/"+id, http.StatusSeeOther)
+			return
+		}
+	}
+	if err := h.store.AdvanceStep(id, stepName); err != nil {
 		flashError(w, r, err.Error())
 		return
 	}
@@ -566,8 +604,17 @@ func (h *Handler) advanceStep(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) answerAsk(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	r.ParseForm()
+	stepName := r.FormValue("step")
+	u := h.currentUser(r)
+	if inst, ok := h.store.Instance(id); ok {
+		if s := inst.StepByName(stepName); s != nil && !userCanDoStep(u, s) {
+			flashError(w, r, "Keine Berechtigung für diesen Schritt.")
+			http.Redirect(w, r, "/instance/"+id, http.StatusSeeOther)
+			return
+		}
+	}
 	idx, _ := strconv.Atoi(r.FormValue("choice"))
-	if err := h.store.AnswerAsk(id, r.FormValue("step"), idx); err != nil {
+	if err := h.store.AnswerAsk(id, stepName, idx); err != nil {
 		flashError(w, r, err.Error())
 		return
 	}
@@ -735,8 +782,16 @@ func (h *Handler) adminEditUser(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	id := r.PathValue("id")
 	active := r.FormValue("active") == "1"
+	// parse app_roles: comma-separated string from hidden input
+	var appRoles []string
+	for _, rr := range strings.Split(r.FormValue("app_roles"), ",") {
+		rr = strings.TrimSpace(strings.ToLower(rr))
+		if rr != "" {
+			appRoles = append(appRoles, rr)
+		}
+	}
 	if err := h.users.Update(id, r.FormValue("name"), r.FormValue("email"),
-		auth.Role(r.FormValue("role")), active); err != nil {
+		auth.Role(r.FormValue("role")), appRoles, active); err != nil {
 		flashError(w, r, err.Error())
 	}
 	http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
@@ -875,6 +930,37 @@ func priorityVal(p string) int {
 	return 2
 }
 
+// matchAssignFilter returns true if the instance has at least one active step
+// assigned to the given user. filter=="me" matches the current user's username,
+// "user:<name>", email, or any of the user's app_roles via "role:<rolename>".
+func matchAssignFilter(inst *engine.Instance, filter string, u *auth.User) bool {
+	for _, sec := range inst.Sections {
+		for _, s := range sec.Steps {
+			if s.Assign == "" {
+				continue
+			}
+			if string(s.Status) == "done" || string(s.Status) == "skipped" || string(s.Status) == "ended" {
+				continue
+			}
+			if filter == "me" && u != nil {
+				if s.Assign == "user:"+u.Name || s.Assign == u.Name || s.Assign == u.Email {
+					return true
+				}
+				// match via app_roles: step assign="role:hr" and user has "hr" in AppRoles
+				if strings.HasPrefix(s.Assign, "role:") {
+					roleName := strings.TrimPrefix(s.Assign, "role:")
+					if slices.Contains(u.AppRoles, roleName) {
+						return true
+					}
+				}
+			} else if s.Assign == filter {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func hasLabel(labels []string, filter string) bool {
 	for _, l := range labels {
 		if strings.ToLower(l) == filter {
@@ -882,4 +968,64 @@ func hasLabel(labels []string, filter string) bool {
 		}
 	}
 	return false
+}
+
+// userCanDoStep checks if a user is allowed to act on a step.
+// Admins and unassigned steps are always allowed. Otherwise the user must match
+// the step's assign field (by name, email, or app role).
+func userCanDoStep(u *auth.User, s *engine.StepState) bool {
+	if u == nil || !u.CanWrite() {
+		return false
+	}
+	if u.CanAdmin() || s.Assign == "" {
+		return true
+	}
+	if s.Assign == "user:"+u.Name || s.Assign == u.Name || s.Assign == u.Email {
+		return true
+	}
+	if strings.HasPrefix(s.Assign, "role:") {
+		roleName := strings.TrimPrefix(s.Assign, "role:")
+		return slices.Contains(u.AppRoles, roleName)
+	}
+	return false
+}
+
+// ── Profile ──
+
+func (h *Handler) profilePage(w http.ResponseWriter, r *http.Request) {
+	u := h.currentUser(r)
+	h.render(w, r, "profile.html", map[string]any{
+		"CurrentUser": u,
+		"Flash":       getFlash(w, r),
+	})
+}
+
+func (h *Handler) profileSave(w http.ResponseWriter, r *http.Request) {
+	u := h.currentUser(r)
+	r.ParseForm()
+	name := strings.TrimSpace(r.FormValue("name"))
+	if name == "" {
+		flashError(w, r, "Name darf nicht leer sein.")
+		http.Redirect(w, r, "/profile", http.StatusSeeOther)
+		return
+	}
+	pw := r.FormValue("password")
+	if pw != "" {
+		if len(pw) < 8 {
+			flashError(w, r, "Passwort muss mindestens 8 Zeichen haben.")
+			http.Redirect(w, r, "/profile", http.StatusSeeOther)
+			return
+		}
+		if err := h.users.ResetPassword(u.ID, pw); err != nil {
+			flashError(w, r, err.Error())
+			http.Redirect(w, r, "/profile", http.StatusSeeOther)
+			return
+		}
+	}
+	if err := h.users.Update(u.ID, name, u.Email, u.Role, u.AppRoles, u.Active); err != nil {
+		flashError(w, r, err.Error())
+		http.Redirect(w, r, "/profile", http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/profile", http.StatusSeeOther)
 }

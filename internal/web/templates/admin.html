@@ -13,8 +13,30 @@
 <header>
   <a href="/">← Board</a>
   <h2>Benutzerverwaltung</h2>
-  {{if .CurrentUser}}<span class="user-info">{{.CurrentUser.Name}}</span>{{end}}
-  <button class="theme-btn" onclick="toggleTheme()">◐</button>
+  {{if .CurrentUser}}
+  <div class="user-menu-wrap">
+    <button class="user-menu-btn" onclick="toggleUserMenu()" title="{{.CurrentUser.Name}}">
+      <span class="user-avatar-sm">{{initial .CurrentUser.Name}}</span>
+    </button>
+    <div class="user-menu-dropdown" id="userMenuDropdown">
+      <div class="user-menu-header">
+        <div class="user-menu-avatar">{{initial .CurrentUser.Name}}</div>
+        <div>
+          <div class="user-menu-name">{{.CurrentUser.Name}}</div>
+          <div class="user-menu-email">{{.CurrentUser.Email}}</div>
+        </div>
+      </div>
+      <div class="user-menu-sep"></div>
+      <a class="user-menu-item" href="/profile">⚙ Einstellungen</a>
+      <a class="user-menu-item active" href="/admin/users">👥 Benutzerverwaltung</a>
+      <button class="user-menu-item" onclick="toggleTheme()">◐ Dark Mode</button>
+      <div class="user-menu-sep"></div>
+      <form method="POST" action="/logout" style="margin:0;">
+        <button type="submit" class="user-menu-item danger">⏻ Logout</button>
+      </form>
+    </div>
+  </div>
+  {{end}}
 </header>
 
 {{if .Flash}}<div class="flash-error">⚠ {{.Flash}}</div>{{end}}
@@ -31,8 +53,9 @@
         <div class="user-email">{{.Email}}</div>
       </div>
       <span class="role-badge role-{{.Role}}">{{roleLabel .Role}}</span>
+      {{if .AppRoles}}<div class="app-roles">{{range .AppRoles}}<span class="app-role-tag">{{.}}</span>{{end}}</div>{{end}}
       <div class="user-actions">
-        <button class="btn-sm" onclick="openEdit('{{.ID}}','{{.Name}}','{{.Email}}','{{.Role}}',{{if .Active}}true{{else}}false{{end}})">✏</button>
+        <button class="btn-sm" onclick="openEdit('{{.ID}}','{{.Name}}','{{.Email}}','{{.Role}}','{{join .AppRoles ","}}',{{if .Active}}true{{else}}false{{end}})">✏</button>
         <button class="btn-sm" onclick="openPw('{{.ID}}','{{.Name}}')">🔑</button>
         <button class="btn-sm danger" onclick="openDel('{{.ID}}','{{.Name}}')">✕</button>
       </div>
@@ -75,6 +98,14 @@
           <option value="admin">Admin</option>
         </select>
       </div>
+      <div class="field">
+        <label>App-Rollen <small style="color:var(--text4);font-weight:normal">(z.B. hr, finance, manager)</small></label>
+        <div class="tag-input-wrap" id="editRoleTagsWrap">
+          <div id="editRoleTags" class="tag-list"></div>
+          <input type="text" id="editRoleInput" placeholder="Rolle eingeben + Enter" autocomplete="off">
+        </div>
+        <input type="hidden" name="app_roles" id="editAppRoles">
+      </div>
       <div class="field"><label><input type="checkbox" name="active" value="1" id="editActive"> Aktiv</label></div>
       <div class="modal-actions">
         <button type="button" class="btn-sm" onclick="closeModals()">Abbrechen</button>
@@ -113,14 +144,46 @@
 </div>
 
 <script>
-function openEdit(id, name, email, role, active) {
+let editRolesList = [];
+function renderRoleTags() {
+  const wrap = document.getElementById('editRoleTags');
+  wrap.innerHTML = '';
+  editRolesList.forEach((r, i) => {
+    const span = document.createElement('span');
+    span.className = 'tag-chip';
+    span.textContent = r;
+    const x = document.createElement('button');
+    x.type = 'button'; x.textContent = '×'; x.className = 'tag-remove';
+    x.onclick = () => { editRolesList.splice(i,1); renderRoleTags(); };
+    span.appendChild(x);
+    wrap.appendChild(span);
+  });
+  document.getElementById('editAppRoles').value = editRolesList.join(',');
+}
+function openEdit(id, name, email, role, appRoles, active) {
   document.getElementById('editForm').action = '/admin/users/'+id+'/edit';
   document.getElementById('editName').value = name;
   document.getElementById('editEmail').value = email;
   document.getElementById('editRole').value = role;
   document.getElementById('editActive').checked = active;
+  editRolesList = appRoles ? appRoles.split(',').map(s=>s.trim()).filter(Boolean) : [];
+  renderRoleTags();
+  document.getElementById('editRoleInput').value = '';
   document.getElementById('editModal').classList.add('open');
 }
+document.addEventListener('DOMContentLoaded', () => {
+  const inp = document.getElementById('editRoleInput');
+  if (inp) inp.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault();
+      const val = inp.value.trim().toLowerCase().replace(/[^a-z0-9_-]/g,'');
+      if (val && !editRolesList.includes(val)) { editRolesList.push(val); renderRoleTags(); }
+      inp.value = '';
+    } else if (e.key === 'Backspace' && inp.value === '' && editRolesList.length) {
+      editRolesList.pop(); renderRoleTags();
+    }
+  });
+});
 function openPw(id, name) {
   document.getElementById('pwForm').action = '/admin/users/'+id+'/password';
   document.getElementById('pwName').textContent = name;
@@ -139,6 +202,16 @@ function closeModals() {
 document.querySelectorAll('.modal').forEach(m => m.addEventListener('click', e => { if(e.target===m) closeModals(); }));
 document.addEventListener('keydown', e => { if(e.key==='Escape') closeModals(); });
 // toggleTheme() loaded from /static/theme-toggle.js
+function toggleUserMenu() {
+  document.getElementById('userMenuDropdown').classList.toggle('open');
+}
+document.addEventListener('click', e => {
+  const wrap = document.querySelector('.user-menu-wrap');
+  if (wrap && !wrap.contains(e.target)) {
+    const dd = document.getElementById('userMenuDropdown');
+    if (dd) dd.classList.remove('open');
+  }
+});
 </script>
 <script src="/static/theme-toggle.js"></script>
 </body>

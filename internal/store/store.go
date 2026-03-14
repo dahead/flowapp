@@ -40,7 +40,28 @@ func New(workflowDir, dataDir string) (*Store, error) {
 		return nil, err
 	}
 	go s.watchWorkflows()
+	go s.runScheduler()
 	return s, nil
+}
+
+// runScheduler ticks every minute and activates scheduled steps.
+func (s *Store) runScheduler() {
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+	for range ticker.C {
+		s.mu.Lock()
+		for _, inst := range s.instances {
+			if inst.Status == engine.StatusDone {
+				continue
+			}
+			if inst.TickScheduled() {
+				if err := s.save(inst); err != nil {
+					log.Printf("[scheduler] save error for %s: %v", inst.ID, err)
+				}
+			}
+		}
+		s.mu.Unlock()
+	}
 }
 
 func (s *Store) watchWorkflows() {

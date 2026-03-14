@@ -31,7 +31,8 @@ header h2 { font-size: 1.2rem; flex: 1; }
 .step-name.pending { color: var(--text2); }
 .step-note   { font-size: 0.8rem; color: var(--text3); margin-top: 0.25rem; padding: 0.3rem 0.6rem; background: var(--note-bg); border-left: 3px solid var(--note-border); border-radius: 0 4px 4px 0; }
 .step-notify { font-size: 0.75rem; color: var(--accent); margin-top: 0.2rem; }
-.step-assign { font-size: 0.75rem; color: #16a34a; margin-top: 0.2rem; }
+.step-assign   { font-size: 0.75rem; color: #16a34a; margin-top: 0.2rem; }
+.step-schedule { font-size: 0.75rem; color: #7c3aed; margin-top: 0.2rem; }
 .step-needs  { font-size: 0.72rem; color: var(--text3); margin-top: 0.2rem; }
 .step-due    { font-size: 0.75rem; margin-top: 0.25rem; color: var(--text3); }
 .step-due.overdue { color: #ef4444; font-weight: 600; }

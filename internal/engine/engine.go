@@ -15,13 +15,13 @@ import (
 type Status string
 
 const (
-	StatusPending  Status = "pending"  // needs not yet satisfied
-	StatusReady    Status = "ready"    // can be acted on
-	StatusAsk      Status = "ask"      // waiting for UI answer
-	StatusGate     Status = "gate"     // waiting for external token
-	StatusDone     Status = "done"
-	StatusSkipped  Status = "skipped"  // bypassed by ask routing
-	StatusEnded    Status = "ended"    // ends keyword
+	StatusPending Status = "pending" // needs not yet satisfied
+	StatusReady   Status = "ready"   // can be acted on
+	StatusAsk     Status = "ask"     // waiting for UI answer
+	StatusGate    Status = "gate"    // waiting for external token
+	StatusDone    Status = "done"
+	StatusSkipped Status = "skipped" // bypassed by ask routing
+	StatusEnded   Status = "ended"   // ends keyword
 )
 
 type Comment struct {
@@ -51,20 +51,20 @@ type AskState struct {
 }
 
 type Instance struct {
-	ID           string          `json:"id"`
-	WorkflowName string          `json:"workflow_name"`
-	Labels       []string        `json:"labels,omitempty"`
-	Title        string          `json:"title"`
-	Priority     string          `json:"priority"`
-	CreatedAt    time.Time       `json:"created_at"`
-	UpdatedAt    time.Time       `json:"updated_at"`
-	Sections     []*SectionState `json:"sections"`
-	Status       Status          `json:"status"`
-	Position     int             `json:"position"`
-	Archived     bool            `json:"archived,omitempty"`
+	ID           string            `json:"id"`
+	WorkflowName string            `json:"workflow_name"`
+	Labels       []string          `json:"labels,omitempty"`
+	Title        string            `json:"title"`
+	Priority     string            `json:"priority"`
+	CreatedAt    time.Time         `json:"created_at"`
+	UpdatedAt    time.Time         `json:"updated_at"`
+	Sections     []*SectionState   `json:"sections"`
+	Status       Status            `json:"status"`
+	Position     int               `json:"position"`
+	Archived     bool              `json:"archived,omitempty"`
 	Vars         map[string]string `json:"vars,omitempty"`
-	Comments     []Comment       `json:"comments,omitempty"`
-	Audit        []AuditEntry    `json:"audit,omitempty"`
+	Comments     []Comment         `json:"comments,omitempty"`
+	Audit        []AuditEntry      `json:"audit,omitempty"`
 }
 
 type SectionState struct {
@@ -73,24 +73,72 @@ type SectionState struct {
 }
 
 type StepState struct {
-	Name      string     `json:"name"`
-	Status    Status     `json:"status"`
-	Note      string     `json:"note,omitempty"`
-	Notify    string     `json:"notify,omitempty"`
-	Assign    string     `json:"assign,omitempty"`
-	Due       string     `json:"due,omitempty"`
-	DueAt     *time.Time `json:"due_at,omitempty"`
-	StartedAt *time.Time `json:"started_at,omitempty"`
-	UpdatedAt time.Time  `json:"updated_at"`
-	Needs     []string   `json:"needs,omitempty"`
-	ListItems []ListItem  `json:"list_items,omitempty"`
-	Ask       *AskState   `json:"ask,omitempty"`
-	Comments  []Comment   `json:"step_comments,omitempty"`
-	Gate      bool       `json:"gate,omitempty"`
-	GateToken string     `json:"gate_token,omitempty"`
-	GateUsed  bool       `json:"gate_used,omitempty"`
-	Ends      bool       `json:"ends,omitempty"`
-	ChosenIdx int        `json:"chosen_idx,omitempty"` // which ask target was chosen
+	Name       string     `json:"name"`
+	Status     Status     `json:"status"`
+	Note       string     `json:"note,omitempty"`
+	Notify     string     `json:"notify,omitempty"`
+	Assign     string     `json:"assign,omitempty"`
+	Schedule   string     `json:"schedule,omitempty"`    // raw schedule expression
+	ScheduleAt *time.Time `json:"schedule_at,omitempty"` // resolved activation time
+	Due        string     `json:"due,omitempty"`
+	DueAt      *time.Time `json:"due_at,omitempty"`
+	StartedAt  *time.Time `json:"started_at,omitempty"`
+	UpdatedAt  time.Time  `json:"updated_at"`
+	Needs      []string   `json:"needs,omitempty"`
+	ListItems  []ListItem `json:"list_items,omitempty"`
+	Ask        *AskState  `json:"ask,omitempty"`
+	Comments   []Comment  `json:"step_comments,omitempty"`
+	Gate       bool       `json:"gate,omitempty"`
+	GateToken  string     `json:"gate_token,omitempty"`
+	GateUsed   bool       `json:"gate_used,omitempty"`
+	Ends       bool       `json:"ends,omitempty"`
+	ChosenIdx  int        `json:"chosen_idx,omitempty"` // which ask target was chosen
+}
+
+// --- Schedule ---
+
+// parseSchedule resolves a schedule expression relative to instanceStart.
+// Formats: "2025-12-01" (absolute date), "+3d" / "+2w" / "+4h" (relative).
+func parseSchedule(s string, instanceStart time.Time) (time.Time, error) {
+	s = strings.TrimSpace(strings.Trim(s, `"`))
+	if strings.HasPrefix(s, "+") {
+		// relative: +Nd / +Nw / +Nh
+		raw := s[1:]
+		if len(raw) < 2 {
+			return time.Time{}, fmt.Errorf("invalid schedule: %s", s)
+		}
+		n, err := strconv.Atoi(raw[:len(raw)-1])
+		if err != nil {
+			return time.Time{}, fmt.Errorf("invalid schedule number: %s", s)
+		}
+		switch raw[len(raw)-1] {
+		case 'h':
+			return instanceStart.Add(time.Duration(n) * time.Hour), nil
+		case 'd':
+			return instanceStart.Add(time.Duration(n) * 24 * time.Hour), nil
+		case 'w':
+			return instanceStart.Add(time.Duration(n) * 7 * 24 * time.Hour), nil
+		}
+		return time.Time{}, fmt.Errorf("unknown schedule unit in '%s'", s)
+	}
+	// absolute date: YYYY-MM-DD
+	t, err := time.ParseInLocation("2006-01-02", s, instanceStart.Location())
+	if err != nil {
+		return time.Time{}, fmt.Errorf("invalid schedule date '%s': %w", s, err)
+	}
+	return t, nil
+}
+
+func setScheduleAt(step *StepState, instanceStart time.Time) {
+	if step.Schedule == "" || step.ScheduleAt != nil {
+		return
+	}
+	t, err := parseSchedule(step.Schedule, instanceStart)
+	if err != nil {
+		log.Printf("[engine] schedule parse error for step '%s': %v", step.Name, err)
+		return
+	}
+	step.ScheduleAt = &t
 }
 
 // --- Due ---
@@ -214,10 +262,11 @@ func NewInstance(id, title string, wf *dsl.Workflow) *Instance {
 			}
 			st := &StepState{
 				Name: step.Name, Note: step.Note, Notify: step.Notify, Assign: step.Assign,
-				Due: step.Due, Needs: needs,
+				Schedule: step.Schedule, Due: step.Due, Needs: needs,
 				Ask: askSt, Gate: step.Gate, Ends: step.Ends,
 				Status: StatusPending,
 			}
+			setScheduleAt(st, now)
 			for i, li := range step.ListItems {
 				st.ListItems = append(st.ListItems, ListItem{
 					ID: fmt.Sprintf("%d", i), Text: li.Text, Required: li.Required,
@@ -240,7 +289,7 @@ func (inst *Instance) ApplyVars(vars map[string]string) {
 	inst.Title = substituteVars(inst.Title, vars)
 	// substitute in step notes and names
 	inst.allSteps(func(s *StepState) {
-		s.Note   = substituteVars(s.Note, vars)
+		s.Note = substituteVars(s.Note, vars)
 		s.Notify = substituteVars(s.Notify, vars)
 	})
 }
@@ -254,6 +303,7 @@ func substituteVars(s string, vars map[string]string) string {
 }
 
 // activateReady scans all steps and activates those whose needs are satisfied
+// and whose schedule (if any) has been reached.
 func (inst *Instance) activateReady(now time.Time) {
 	changed := true
 	for changed {
@@ -262,13 +312,43 @@ func (inst *Instance) activateReady(now time.Time) {
 			if s.Status != StatusPending {
 				return
 			}
-			if inst.needsSatisfied(s) {
-				log.Printf("[engine] activating step '%s' (was pending)", s.Name)
-				inst.activate(s, now)
-				changed = true
+			if !inst.needsSatisfied(s) {
+				return
 			}
+			if s.ScheduleAt != nil && now.Before(*s.ScheduleAt) {
+				return // scheduled for the future
+			}
+			log.Printf("[engine] activating step '%s' (was pending)", s.Name)
+			inst.activate(s, now)
+			changed = true
 		})
 	}
+}
+
+// TickScheduled activates any pending steps whose schedule time has arrived.
+// Call this periodically (e.g. every minute) from a background goroutine.
+func (inst *Instance) TickScheduled() bool {
+	now := time.Now()
+	var activated bool
+	inst.allSteps(func(s *StepState) {
+		if s.Status != StatusPending {
+			return
+		}
+		if s.ScheduleAt == nil || now.Before(*s.ScheduleAt) {
+			return
+		}
+		if !inst.needsSatisfied(s) {
+			return
+		}
+		log.Printf("[engine] scheduled activation of step '%s'", s.Name)
+		inst.activate(s, now)
+		activated = true
+	})
+	if activated {
+		inst.activateReady(now) // cascade
+		inst.UpdatedAt = now
+	}
+	return activated
 }
 
 func (inst *Instance) needsSatisfied(s *StepState) bool {
@@ -299,9 +379,23 @@ func (inst *Instance) activate(s *StepState, now time.Time) {
 	if s.Notify != "" && s.Gate {
 		fireNotify(inst, s) // send gate link on activation
 	}
+	if s.Assign != "" {
+		fireAssignNotify(inst, s) // notify assignee
+	}
 }
 
 // AdvanceStep — complete a ready step
+func (inst *Instance) StepByName(name string) *StepState {
+	for _, sec := range inst.Sections {
+		for _, s := range sec.Steps {
+			if s.Name == name {
+				return s
+			}
+		}
+	}
+	return nil
+}
+
 func (inst *Instance) AdvanceStep(stepName string) error {
 	now := time.Now()
 	s := inst.findStepByName(stepName)
@@ -578,6 +672,18 @@ func filterNeeds(needs []string) []string {
 		}
 	}
 	return out
+}
+
+func fireAssignNotify(inst *Instance, step *StepState) {
+	msg := fmt.Sprintf("[%s] ASSIGN → %s | instance: %s (%s) | step: %s\n",
+		time.Now().Format(time.RFC3339), step.Assign,
+		inst.Title, inst.WorkflowName, step.Name)
+	log.Print(msg)
+	f, err := os.OpenFile("notifications.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err == nil {
+		defer f.Close()
+		f.WriteString(msg)
+	}
 }
 
 func fireNotify(inst *Instance, step *StepState) {

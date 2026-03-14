@@ -10,7 +10,7 @@ type Workflow struct {
 	Name     string
 	Priority string
 	Labels   []string
-	Vars     []string  // variable names to prompt on instance creation
+	Vars     []string // variable names to prompt on instance creation
 	Sections []*Section
 }
 
@@ -24,12 +24,13 @@ type Step struct {
 	Note      string
 	Notify    string
 	Assign    string
+	Schedule  string // absolute date "2025-12-01" or relative "+3d"
 	Due       string
-	Needs     []string  // AND-join: all must be done
+	Needs     []string // AND-join: all must be done
 	ListItems []ListItem
-	Ask       *AskDef   // nil if not an ask step
-	Gate      bool      // waits for external approval via token link
-	Ends      bool      // terminal step, no successors
+	Ask       *AskDef // nil if not an ask step
+	Gate      bool    // waits for external approval via token link
+	Ends      bool    // terminal step, no successors
 }
 
 type AskDef struct {
@@ -117,6 +118,15 @@ func Parse(input string) (*Workflow, error) {
 				return nil, fmt.Errorf("line %d: 'assign' must be inside a step", lineNum)
 			}
 			currentStep.Assign = strings.Join(args, " ")
+
+		case "schedule":
+			if currentStep == nil {
+				return nil, fmt.Errorf("line %d: 'schedule' must be inside a step", lineNum)
+			}
+			if len(args) == 0 {
+				return nil, fmt.Errorf("line %d: 'schedule' requires a date or duration", lineNum)
+			}
+			currentStep.Schedule = strings.Join(args, " ")
 
 		case "notify":
 			if currentStep == nil {
@@ -255,7 +265,7 @@ func tokenize(line string) []string {
 func DetectCycles(wf *Workflow) error {
 	// build adjacency: step → steps it needs
 	deps := map[string][]string{}
-	all  := map[string]bool{}
+	all := map[string]bool{}
 	for _, sec := range wf.Sections {
 		for _, s := range sec.Steps {
 			all[s.Name] = true
@@ -263,7 +273,9 @@ func DetectCycles(wf *Workflow) error {
 		}
 	}
 	// DFS cycle detection
-	const (white, grey, black = 0, 1, 2)
+	const (
+		white, grey, black = 0, 1, 2
+	)
 	color := map[string]int{}
 	var path []string
 	var visit func(name string) error
@@ -271,7 +283,9 @@ func DetectCycles(wf *Workflow) error {
 		color[name] = grey
 		path = append(path, name)
 		for _, dep := range deps[name] {
-			if !all[dep] { continue }
+			if !all[dep] {
+				continue
+			}
 			switch color[dep] {
 			case grey:
 				// find cycle start
@@ -282,7 +296,9 @@ func DetectCycles(wf *Workflow) error {
 				}
 				return fmt.Errorf("circular dependency involving %q", dep)
 			case white:
-				if err := visit(dep); err != nil { return err }
+				if err := visit(dep); err != nil {
+					return err
+				}
 			}
 		}
 		path = path[:len(path)-1]
@@ -291,7 +307,9 @@ func DetectCycles(wf *Workflow) error {
 	}
 	for name := range all {
 		if color[name] == white {
-			if err := visit(name); err != nil { return err }
+			if err := visit(name); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

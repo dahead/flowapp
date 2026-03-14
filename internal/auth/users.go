@@ -25,6 +25,7 @@ type User struct {
 	Email        string    `json:"email"`
 	Name         string    `json:"name"`
 	Role         Role      `json:"role"`
+	AppRoles     []string  `json:"app_roles,omitempty"`
 	PasswordHash string    `json:"password_hash"`
 	CreatedAt    time.Time `json:"created_at"`
 	Active       bool      `json:"active"`
@@ -147,7 +148,7 @@ func (s *UserStore) List() []*User {
 	return list
 }
 
-func (s *UserStore) Update(id, name, email string, role Role, active bool) error {
+func (s *UserStore) Update(id, name, email string, role Role, appRoles []string, active bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	u, ok := s.users[id]
@@ -166,12 +167,13 @@ func (s *UserStore) Update(id, name, email string, role Role, active bool) error
 	}
 	u.Name = name
 	u.Role = role
+	u.AppRoles = appRoles
 	u.Active = active
 	if err := s.save(); err != nil {
 		log.Printf("[auth] update user failed — save error for %s: %v", id, err)
 		return err
 	}
-	log.Printf("[auth] updated user %s (%s) role=%s active=%v", id, email, role, active)
+	log.Printf("[auth] updated user %s (%s) role=%s appRoles=%v active=%v", id, email, role, appRoles, active)
 	return nil
 }
 

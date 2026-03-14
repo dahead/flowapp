@@ -226,8 +226,37 @@
     margin-top: 1rem;
 }
 
-/* responsive */
+/* app-role tags in user list */
+.app-roles { display:flex; flex-wrap:wrap; gap:0.25rem; margin-top:0.25rem; }
+.app-role-tag {
+    font-size:0.7rem; padding:0.1rem 0.45rem; border-radius:999px;
+    background:#fff7ed; color:#c2410c; font-weight:600;
+}
+[data-theme="dark"] .app-role-tag { background:#431407; color:#fb923c; }
 
+/* tag-input for app roles in edit modal */
+.tag-input-wrap {
+    border:1px solid var(--border); border-radius:6px;
+    padding:0.3rem 0.4rem; display:flex; flex-wrap:wrap; gap:0.3rem;
+    background:var(--bg2); cursor:text;
+}
+.tag-input-wrap input {
+    border:none; outline:none; background:transparent;
+    font-size:0.85rem; color:var(--text1); min-width:120px; flex:1;
+}
+.tag-list { display:contents; }
+.tag-chip {
+    display:inline-flex; align-items:center; gap:0.2rem;
+    background:#fff7ed; color:#c2410c; border-radius:999px;
+    font-size:0.75rem; font-weight:600; padding:0.1rem 0.5rem;
+}
+[data-theme="dark"] .tag-chip { background:#431407; color:#fb923c; }
+.tag-remove {
+    background:none; border:none; cursor:pointer; padding:0;
+    font-size:0.85rem; color:inherit; line-height:1;
+}
+
+/* responsive */
 @media (max-width:680px) {
     .content {
         grid-template-columns: 1fr;
