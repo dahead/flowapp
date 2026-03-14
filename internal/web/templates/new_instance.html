@@ -7,15 +7,8 @@
 <link rel="stylesheet" href="/static/common.css">
 <link rel="stylesheet" href="/static/auth.css">
 <title>New Instance — FlowApp</title>
-<script>(function(){ const t=localStorage.getItem('theme')||(window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'); document.documentElement.setAttribute('data-theme',t); })();</script>
+<script src="/static/theme-init.js"></script>
 <style>
-:root{--bg:#e8eaf0;--bg2:#fff;--border:#d4d6e4;--text:#1a1a2e;--text3:#777;--accent:#6c63ff;--accent2:#574fd6;}
-[data-theme="dark"]{--bg:#0f0f17;--bg2:#1a1a2e;--border:#2e2e4a;--text:#e8e8f0;--text3:#6a6a8a;--accent:#7c73ff;--accent2:#6c63ff;}
-*{box-sizing:border-box;margin:0;padding:0;}
-body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex;align-items:center;justify-content:center;}
-.card{background:var(--bg2);border-radius:14px;box-shadow:0 4px 24px rgba(0,0,0,0.12);padding:2rem;width:420px;max-width:95vw;border:1px solid var(--border);}
-h2{font-size:1.1rem;margin-bottom:0.25rem;}
-.subtitle{font-size:0.82rem;color:var(--text3);margin-bottom:1.5rem;}
 .field{display:flex;flex-direction:column;gap:0.25rem;margin-bottom:0.9rem;}
 .field label{font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--text3);}
 .field input,.field select{border:1.5px solid var(--border);border-radius:7px;padding:0.42rem 0.65rem;font-size:0.92rem;font-family:inherit;outline:none;background:var(--bg);color:var(--text);}
@@ -33,7 +26,7 @@ h2{font-size:1.1rem;margin-bottom:0.25rem;}
   <h2>{{.WorkflowName}}</h2>
   <div class="subtitle">Fill in the details to create a new instance</div>
   <form method="POST" action="/instance">
-                {{csrfField .CurrentUser}}
+    {{csrfField .CurrentUser}}
     <input type="hidden" name="workflow" value="{{.WorkflowName}}">
     <div class="field">
       <label>Title</label>

@@ -10,6 +10,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"reflect"
 	"slices"
 	"sort"
 	"strconv"
@@ -140,6 +141,26 @@ func New(s *store.Store, users *auth.UserStore, tmplGlob string) (*Handler, erro
 			return circ - (float64(done)/float64(total))*circ
 		},
 		"canWrite": func(u *auth.User) bool { return u != nil && u.CanWrite() },
+		// isPage returns true if the data's Page field matches the given string.
+		// Safe to call from any template — returns false if Page field doesn't exist.
+		"isPage": func(data any, page string) bool {
+			type pager interface{ GetPage() string }
+			if p, ok := data.(pager); ok {
+				return p.GetPage() == page
+			}
+			// use reflection to read Page field if present
+			v := reflect.ValueOf(data)
+			if v.Kind() == reflect.Ptr {
+				v = v.Elem()
+			}
+			if v.Kind() == reflect.Struct {
+				f := v.FieldByName("Page")
+				if f.IsValid() && f.Kind() == reflect.String {
+					return f.String() == page
+				}
+			}
+			return false
+		},
 		// canDoStep returns true if the user may act on a step.
 		// Admins and steps without an assign field are always allowed.
 		// Otherwise the user must match the assign expression.
@@ -609,16 +630,39 @@ type instanceData struct {
 	*engine.Instance
 	Flash       string
 	CurrentUser *auth.User
+	PrevID      string
+	NextID      string
 }
 
 // instanceDetail renders the detail view for a single workflow instance.
 func (h *Handler) instanceDetail(w http.ResponseWriter, r *http.Request) {
-	inst, ok := h.store.Instance(r.PathValue("id"))
+	id := r.PathValue("id")
+	inst, ok := h.store.Instance(id)
 	if !ok {
 		http.NotFound(w, r)
 		return
 	}
-	h.render(w, r, "instance.html", instanceData{inst, getFlash(w, r), h.currentUser(r)})
+	// compute prev/next from position-sorted active instances
+	all := h.store.Instances()
+	sort.Slice(all, func(i, j int) bool {
+		if all[i].Position != all[j].Position {
+			return all[i].Position < all[j].Position
+		}
+		return all[i].CreatedAt.Before(all[j].CreatedAt)
+	})
+	var prevID, nextID string
+	for i, ins := range all {
+		if ins.ID == id {
+			if i > 0 {
+				prevID = all[i-1].ID
+			}
+			if i < len(all)-1 {
+				nextID = all[i+1].ID
+			}
+			break
+		}
+	}
+	h.render(w, r, "instance.html", instanceData{inst, getFlash(w, r), h.currentUser(r), prevID, nextID})
 }
 
 // createInstance handles the POST form that creates a new workflow instance.
@@ -873,13 +917,14 @@ type adminData struct {
 	Users       []*auth.User
 	Flash       string
 	CurrentUser *auth.User
+	Page        string
 }
 
 // adminUsers renders the user administration list.
 func (h *Handler) adminUsers(w http.ResponseWriter, r *http.Request) {
 	users := h.users.List()
 	sort.Slice(users, func(i, j int) bool { return users[i].CreatedAt.Before(users[j].CreatedAt) })
-	h.render(w, r, "admin.html", adminData{Users: users, Flash: getFlash(w, r), CurrentUser: h.currentUser(r)})
+	h.render(w, r, "admin.html", adminData{Users: users, Flash: getFlash(w, r), CurrentUser: h.currentUser(r), Page: "users"})
 }
 
 // adminCreateUser handles the form submission to create a new user.
@@ -953,6 +998,7 @@ type mailAdminData struct {
 	Error       string
 	TestOK      bool
 	CurrentUser *auth.User
+	Page        string
 }
 
 // adminMailPage renders the mail configuration page.
@@ -961,6 +1007,7 @@ func (h *Handler) adminMailPage(w http.ResponseWriter, r *http.Request) {
 		Config:      h.store.GetMailConfig(),
 		Flash:       getFlashOK(w, r),
 		CurrentUser: h.currentUser(r),
+		Page:        "mail",
 	})
 }
 

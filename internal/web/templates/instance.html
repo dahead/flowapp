@@ -2,16 +2,17 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<link rel="stylesheet" href="/static/app.css">
-<link rel="stylesheet" href="/static/common.css">
+{{template "head-base" .}}
 <title>{{.Title}} — FlowApp</title>
-<script src="/static/theme-init.js"></script>
 <link rel="stylesheet" href="/static/instance.css">
 </head>
 <body>
 <header>
   <a href="/">← Board</a>
+  <div style="display:flex;gap:0.3rem;">
+    {{if .PrevID}}<a href="/instance/{{.PrevID}}" title="Previous instance" style="font-size:0.85rem;padding:0.3rem 0.6rem;border-radius:6px;border:1px solid var(--border);color:var(--text3);text-decoration:none;">‹ prev</a>{{end}}
+    {{if .NextID}}<a href="/instance/{{.NextID}}" title="Next instance" style="font-size:0.85rem;padding:0.3rem 0.6rem;border-radius:6px;border:1px solid var(--border);color:var(--text3);text-decoration:none;">next ›</a>{{end}}
+  </div>
   <h2>{{.Title}}</h2>
   <span class="wf-badge">{{.WorkflowName}}</span>
   <span class="priority-badge {{.Priority}}">{{.Priority}}</span>
@@ -317,16 +318,7 @@ function toggleToolMenu(btn) {
 }
 
 // toggleTheme() loaded from /static/theme-toggle.js
-function toggleUserMenu() {
-  document.getElementById('userMenuDropdown').classList.toggle('open');
-}
-document.addEventListener('click', e => {
-  const wrap = document.querySelector('.user-menu-wrap');
-  if (wrap && !wrap.contains(e.target)) {
-    const dd = document.getElementById('userMenuDropdown');
-    if (dd) dd.classList.remove('open');
-  }
-});
+{{template "menu-js" .}}
 </script>
 <script src="/static/theme-toggle.js"></script>
 </body>
