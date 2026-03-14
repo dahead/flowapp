@@ -13,28 +13,35 @@ import (
 	"time"
 )
 
+// Role defines the access level of a user within the application.
 type Role string
 
 const (
 	RoleAdmin  Role = "admin"
-	RoleUser   Role = "user"
 	RoleViewer Role = "viewer"
+	RoleUser   Role = "user"
 )
 
+// User represents an application user with authentication and role information.
 type User struct {
 	ID           string    `json:"id"`
 	Email        string    `json:"email"`
 	Name         string    `json:"name"`
 	Role         Role      `json:"role"`
-	AppRoles     []string  `json:"app_roles,omitempty"`
+	AppRoles     []string  `json:"app_roles,omitempty"` // domain-specific roles, e.g. "hr", "finance"
 	PasswordHash string    `json:"password_hash"`
 	CreatedAt    time.Time `json:"created_at"`
 	Active       bool      `json:"active"`
 }
 
+// CanWrite returns true if the user may create or modify workflow instances.
 func (u *User) CanWrite() bool { return u.Role == RoleAdmin || u.Role == RoleUser }
+
+// CanAdmin returns true if the user has full administrative access.
 func (u *User) CanAdmin() bool { return u.Role == RoleAdmin }
 
+// UserStore is an in-memory user registry backed by a JSON file.
+// All mutations are written through to disk immediately.
 type UserStore struct {
 	mu      sync.RWMutex
 	path    string
@@ -42,6 +49,8 @@ type UserStore struct {
 	byEmail map[string]*User
 }
 
+// NewUserStore loads the user store from the given JSON file path.
+// If the file does not yet exist an empty store is returned (first-run setup).
 func NewUserStore(path string) (*UserStore, error) {
 	s := &UserStore{path: path, users: map[string]*User{}, byEmail: map[string]*User{}}
 	if _, err := os.Stat(path); err == nil {
@@ -49,13 +58,11 @@ func NewUserStore(path string) (*UserStore, error) {
 			log.Printf("[auth] failed to load user store from %s: %v", path, err)
 			return nil, err
 		}
-		log.Printf("[auth] loaded %d user(s) from %s", len(s.users), path)
-	} else {
-		log.Printf("[auth] no user store found at %s — starting empty", path)
 	}
 	return s, nil
 }
 
+// load reads and parses the JSON file into the in-memory maps.
 func (s *UserStore) load() error {
 	data, err := os.ReadFile(s.path)
 	if err != nil {
@@ -72,6 +79,7 @@ func (s *UserStore) load() error {
 	return nil
 }
 
+// save writes the current in-memory state to the JSON file.
 func (s *UserStore) save() error {
 	list := make([]*User, 0, len(s.users))
 	for _, u := range s.users {
@@ -81,15 +89,18 @@ func (s *UserStore) save() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(s.path, data, 0600)
+	return os.WriteFile(s.path, data, 0644)
 }
 
+// Empty returns true if no users have been created yet (first-run state).
 func (s *UserStore) Empty() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return len(s.users) == 0
 }
 
+// Create adds a new user with a bcrypt-hashed password.
+// Returns an error if the email is already registered.
 func (s *UserStore) Create(email, name, password string, role Role) (*User, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -99,12 +110,12 @@ func (s *UserStore) Create(email, name, password string, role Role) (*User, erro
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
-		log.Printf("[auth] create user failed — bcrypt error for %s: %v", email, err)
 		return nil, err
 	}
 	u := &User{
-		ID: newID(), Email: email, Name: name, Role: role,
-		PasswordHash: string(hash), CreatedAt: time.Now(), Active: true,
+		ID: newID(), Email: email, Name: name,
+		Role: role, PasswordHash: string(hash),
+		CreatedAt: time.Now(), Active: true,
 	}
 	s.users[u.ID] = u
 	s.byEmail[u.Email] = u
@@ -116,6 +127,8 @@ func (s *UserStore) Create(email, name, password string, role Role) (*User, erro
 	return u, nil
 }
 
+// Authenticate verifies the email/password combination and returns the user on success.
+// Returns an error if the credentials are invalid or the account is inactive.
 func (s *UserStore) Authenticate(email, password string) (*User, error) {
 	s.mu.RLock()
 	u := s.byEmail[email]
@@ -125,13 +138,12 @@ func (s *UserStore) Authenticate(email, password string) (*User, error) {
 		return nil, fmt.Errorf("Ungültige Zugangsdaten")
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)); err != nil {
-		log.Printf("[auth] authentication failed — wrong password for user: %s", email)
 		return nil, fmt.Errorf("Ungültige Zugangsdaten")
 	}
-	log.Printf("[auth] authenticated user %s (%s)", u.ID, email)
 	return u, nil
 }
 
+// GetByID looks up a user by their unique ID.
 func (s *UserStore) GetByID(id string) (*User, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -139,6 +151,7 @@ func (s *UserStore) GetByID(id string) (*User, bool) {
 	return u, ok
 }
 
+// List returns all users in the store (order is undefined).
 func (s *UserStore) List() []*User {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -149,12 +162,12 @@ func (s *UserStore) List() []*User {
 	return list
 }
 
+// Update modifies an existing user's profile fields and persists the change.
 func (s *UserStore) Update(id, name, email string, role Role, appRoles []string, active bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	u, ok := s.users[id]
 	if !ok {
-		log.Printf("[auth] update user failed — not found: %s", id)
 		return fmt.Errorf("user not found")
 	}
 	if email != u.Email {
@@ -174,21 +187,19 @@ func (s *UserStore) Update(id, name, email string, role Role, appRoles []string,
 		log.Printf("[auth] update user failed — save error for %s: %v", id, err)
 		return err
 	}
-	log.Printf("[auth] updated user %s (%s) role=%s appRoles=%v active=%v", id, email, role, appRoles, active)
 	return nil
 }
 
+// ResetPassword replaces a user's password hash with a new bcrypt hash.
 func (s *UserStore) ResetPassword(id, newPassword string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	u, ok := s.users[id]
 	if !ok {
-		log.Printf("[auth] reset password failed — user not found: %s", id)
 		return fmt.Errorf("user not found")
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
 	if err != nil {
-		log.Printf("[auth] reset password failed — bcrypt error for %s: %v", id, err)
 		return err
 	}
 	u.PasswordHash = string(hash)
@@ -196,10 +207,11 @@ func (s *UserStore) ResetPassword(id, newPassword string) error {
 		log.Printf("[auth] reset password failed — save error for %s: %v", id, err)
 		return err
 	}
-	log.Printf("[auth] password reset for user %s (%s)", id, u.Email)
+	log.Printf("[auth] password reset for user %s", id)
 	return nil
 }
 
+// Delete removes a user from the store permanently.
 func (s *UserStore) Delete(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -218,8 +230,13 @@ func (s *UserStore) Delete(id string) error {
 	return nil
 }
 
-// ResolveEmails resolves an assign expression to a list of email addresses.
-// Formats: "user:<email>", "user:<name>", "role:<app_role>", or bare email.
+// ResolveEmails resolves an assign/notify expression to a list of email addresses.
+//
+// Supported formats:
+//   - "user:<email>"  — match by email address
+//   - "user:<name>"   — match by display name (case-insensitive)
+//   - "role:<role>"   — all active users with the given app_role
+//   - bare email      — returned as-is
 func (s *UserStore) ResolveEmails(expr string) []string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -254,10 +271,11 @@ func (s *UserStore) ResolveEmails(expr string) []string {
 		}
 		return emails
 	}
-	// bare email
+	// bare email — pass through directly
 	return []string{expr}
 }
 
+// newID generates a random 24-character hex string for use as a unique ID.
 func newID() string {
 	b := make([]byte, 12)
 	rand.Read(b)

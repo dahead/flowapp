@@ -7,20 +7,26 @@ import (
 	"time"
 )
 
+// loginAttempt tracks failed login attempts for a single IP address.
 type loginAttempt struct {
 	count        int
 	firstSeen    time.Time
 	blockedUntil time.Time
 }
 
+// RateLimiter enforces a per-IP limit on login attempts to prevent brute-force attacks.
+// After max attempts within the rolling window, the IP is locked out for a fixed duration.
 type RateLimiter struct {
 	mu       sync.Mutex
 	attempts map[string]*loginAttempt
-	max      int           // max attempts per window
-	window   time.Duration // rolling window
-	lockout  time.Duration // lockout after max attempts
+	max      int           // maximum attempts allowed within the window
+	window   time.Duration // rolling time window for counting attempts
+	lockout  time.Duration // how long to block an IP after exceeding max attempts
 }
 
+// NewRateLimiter creates a RateLimiter with sensible defaults:
+// 5 attempts per 15 minutes, 30-minute lockout on breach.
+// A background goroutine periodically cleans up stale entries.
 func NewRateLimiter() *RateLimiter {
 	r := &RateLimiter{
 		attempts: map[string]*loginAttempt{},
@@ -32,6 +38,8 @@ func NewRateLimiter() *RateLimiter {
 	return r
 }
 
+// Allow checks whether the requesting IP is permitted to attempt a login.
+// Returns (true, 0) if allowed, or (false, remaining wait duration) if blocked.
 func (r *RateLimiter) Allow(req *http.Request) (bool, time.Duration) {
 	ip := clientIP(req)
 	r.mu.Lock()
@@ -44,12 +52,12 @@ func (r *RateLimiter) Allow(req *http.Request) (bool, time.Duration) {
 		r.attempts[ip] = a
 	}
 
-	// still blocked?
+	// still within an active lockout period
 	if now.Before(a.blockedUntil) {
 		return false, a.blockedUntil.Sub(now)
 	}
 
-	// reset window if expired
+	// reset the attempt counter if the rolling window has expired
 	if now.Sub(a.firstSeen) > r.window {
 		a.count = 0
 		a.firstSeen = now
@@ -66,6 +74,8 @@ func (r *RateLimiter) Allow(req *http.Request) (bool, time.Duration) {
 	return true, 0
 }
 
+// Reset clears the attempt record for the requesting IP.
+// Call this after a successful login to lift any partial counts.
 func (r *RateLimiter) Reset(req *http.Request) {
 	ip := clientIP(req)
 	r.mu.Lock()
@@ -73,6 +83,7 @@ func (r *RateLimiter) Reset(req *http.Request) {
 	r.mu.Unlock()
 }
 
+// cleanup runs in the background and removes stale attempt records every 10 minutes.
 func (r *RateLimiter) cleanup() {
 	for range time.Tick(10 * time.Minute) {
 		r.mu.Lock()
@@ -86,6 +97,8 @@ func (r *RateLimiter) cleanup() {
 	}
 }
 
+// clientIP extracts the real client IP from the request,
+// honouring the X-Forwarded-For header when present (e.g. behind a reverse proxy).
 func clientIP(r *http.Request) string {
 	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
 		if host, _, err := net.SplitHostPort(fwd); err == nil {

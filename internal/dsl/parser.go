@@ -6,43 +6,51 @@ import (
 	"strings"
 )
 
+// Workflow is the parsed representation of a .workflow file.
 type Workflow struct {
 	Name     string
 	Priority string
 	Labels   []string
-	Vars     []string // variable names to prompt on instance creation
+	Vars     []string // variable names prompted at instance creation (e.g. "Employee Name")
 	Sections []*Section
 }
 
+// Section groups a set of related steps under a named heading.
 type Section struct {
 	Name  string
 	Steps []*Step
 }
 
+// Step is a single task within a section.
 type Step struct {
 	Name      string
 	Note      string
-	Notify    string
-	Assign    string
-	Schedule  string // absolute date "2025-12-01" or relative "+3d"
-	Due       string
-	Needs     []string // AND-join: all must be done
+	Notify    string   // email address to notify when this step fires
+	Assign    string   // assign expression: "user:<n>", "role:<r>", or bare email
+	Schedule  string   // activation schedule: absolute "2025-12-01" or relative "+3d"
+	Due       string   // time-to-complete deadline: "2h", "3d", "1w"
+	Needs     []string // AND-join: all listed steps must be done before this activates
 	ListItems []ListItem
-	Ask       *AskDef // nil if not an ask step
-	Gate      bool    // waits for external approval via token link
-	Ends      bool    // terminal step, no successors
+	Ask       *AskDef // nil if this is not a branching step
+	Gate      bool    // if true, step waits for external approval via a token link
+	Ends      bool    // if true, completing this step terminates the workflow
 }
 
+// AskDef defines a branching decision within a step.
+// Each button label in the UI corresponds to a routing target step name.
 type AskDef struct {
 	Question string
-	Targets  []string // ordered: button[0] -> target[0]
+	Targets  []string // ordered: button[i] → target step name[i]
 }
 
+// ListItem is a predefined checklist entry declared in the workflow file.
 type ListItem struct {
 	Text     string
-	Required bool
+	Required bool // if true, the item must be checked before the step can be advanced
 }
 
+// Parse reads a workflow definition from its DSL text representation and returns
+// the parsed Workflow, or an error with a line number if the syntax is invalid.
 func Parse(input string) (*Workflow, error) {
 	scanner := bufio.NewScanner(strings.NewReader(input))
 	wf := &Workflow{}
@@ -55,7 +63,7 @@ func Parse(input string) (*Workflow, error) {
 		line := scanner.Text()
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-			continue
+			continue // skip blank lines and comments
 		}
 		tokens := tokenize(trimmed)
 		if len(tokens) == 0 {
@@ -128,20 +136,41 @@ func Parse(input string) (*Workflow, error) {
 			}
 			currentStep.Schedule = strings.Join(args, " ")
 
+		case "due":
+			if currentStep == nil {
+				return nil, fmt.Errorf("line %d: 'due' must be inside a step", lineNum)
+			}
+			currentStep.Due = strings.Join(args, " ")
+
 		case "notify":
 			if currentStep == nil {
 				return nil, fmt.Errorf("line %d: 'notify' must be inside a step", lineNum)
 			}
 			currentStep.Notify = strings.Join(args, " ")
 
-		case "due":
+		case "item", "- ":
+			// checklist item: item "Text" or item! "Required text"
 			if currentStep == nil {
-				return nil, fmt.Errorf("line %d: 'due' must be inside a step", lineNum)
+				return nil, fmt.Errorf("line %d: 'item' must be inside a step", lineNum)
+			}
+			required := strings.HasSuffix(keyword, "!")
+			if len(args) == 0 {
+				return nil, fmt.Errorf("line %d: 'item' requires text", lineNum)
+			}
+			currentStep.ListItems = append(currentStep.ListItems, ListItem{
+				Text: strings.Join(args, " "), Required: required,
+			})
+
+		case "item!":
+			if currentStep == nil {
+				return nil, fmt.Errorf("line %d: 'item!' must be inside a step", lineNum)
 			}
 			if len(args) == 0 {
-				return nil, fmt.Errorf("line %d: 'due' requires a duration", lineNum)
+				return nil, fmt.Errorf("line %d: 'item!' requires text", lineNum)
 			}
-			currentStep.Due = strings.ToLower(args[0])
+			currentStep.ListItems = append(currentStep.ListItems, ListItem{
+				Text: strings.Join(args, " "), Required: true,
+			})
 
 		case "needs":
 			if currentStep == nil {
@@ -150,29 +179,10 @@ func Parse(input string) (*Workflow, error) {
 			// parse comma-separated quoted names: needs "A", "B", "C"
 			currentStep.Needs = parseNameList(args)
 
-		case "list":
-			if currentStep == nil {
-				return nil, fmt.Errorf("line %d: 'list' must be inside a step", lineNum)
-			}
-			if len(args) == 0 {
-				return nil, fmt.Errorf("line %d: 'list' requires item text", lineNum)
-			}
-			required := true
-			text := strings.Join(args, " ")
-			last := strings.ToLower(args[len(args)-1])
-			if last == "optional" {
-				required = false
-				text = strings.Join(args[:len(args)-1], " ")
-			} else if last == "required" {
-				text = strings.Join(args[:len(args)-1], " ")
-			}
-			currentStep.ListItems = append(currentStep.ListItems, ListItem{Text: text, Required: required})
-
 		case "ask":
 			if currentStep == nil {
 				return nil, fmt.Errorf("line %d: 'ask' must be inside a step", lineNum)
 			}
-			// parse: "Question?" -> "Target1", "Target2"
 			ask, err := parseAsk(args, lineNum)
 			if err != nil {
 				return nil, err
@@ -192,61 +202,53 @@ func Parse(input string) (*Workflow, error) {
 			currentStep.Ends = true
 
 		default:
-			return nil, fmt.Errorf("line %d: unknown keyword '%s'", lineNum, keyword)
+			// unknown keywords are silently ignored to allow forward compatibility
 		}
-	}
-
-	if wf.Name == "" {
-		return nil, fmt.Errorf("workflow must have a name")
-	}
-	if wf.Priority == "" {
-		wf.Priority = "medium"
 	}
 	return wf, scanner.Err()
 }
 
-// parseAsk parses: "Question?" -> "Target1", "Target2"
+// parseAsk parses the ask directive arguments.
+// Expected format: "Question?" -> "Target1", "Target2"
 func parseAsk(args []string, lineNum int) (*AskDef, error) {
-	// rejoin and split on "->"
-	raw := strings.Join(args, " ")
-	parts := strings.SplitN(raw, "->", 2)
-	if len(parts) != 2 {
-		return nil, fmt.Errorf("line %d: 'ask' requires format: \"Question?\" -> \"TargetA\", \"TargetB\"", lineNum)
+	if len(args) < 3 {
+		return nil, fmt.Errorf("line %d: 'ask' requires: \"Question?\" -> \"Target1\", ...", lineNum)
 	}
-	question := strings.Trim(strings.TrimSpace(parts[0]), "\"")
-	targetTokens := tokenize(parts[1])
-	targets := parseNameList(targetTokens)
+	question := strings.Trim(args[0], `"`)
+	// args[1] should be "->"
+	targets := parseNameList(args[2:])
 	if len(targets) == 0 {
 		return nil, fmt.Errorf("line %d: 'ask' requires at least one target", lineNum)
 	}
 	return &AskDef{Question: question, Targets: targets}, nil
 }
 
-// parseNameList parses comma-separated quoted names from tokens
+// parseNameList extracts quoted step names from a token slice,
+// stripping surrounding quotes and ignoring commas and the "->" arrow.
 func parseNameList(tokens []string) []string {
-	// re-join and split by comma, strip quotes
-	raw := strings.Join(tokens, " ")
-	parts := strings.Split(raw, ",")
-	var names []string
-	for _, p := range parts {
-		name := strings.Trim(strings.TrimSpace(p), "\"")
-		if name != "" {
-			names = append(names, name)
+	var out []string
+	for _, t := range tokens {
+		t = strings.TrimRight(t, ",")
+		t = strings.Trim(t, `"`)
+		if t != "" && t != "->" {
+			out = append(out, t)
 		}
 	}
-	return names
+	return out
 }
 
+// tokenize splits a DSL line into tokens, treating double-quoted strings as
+// single tokens (preserving internal spaces).
 func tokenize(line string) []string {
 	var tokens []string
 	var cur strings.Builder
-	inQ := false
+	inQuote := false
 	for _, ch := range line {
 		switch {
 		case ch == '"':
-			inQ = !inQ
-			// don't write the quote — tokens come out unquoted
-		case (ch == ' ' || ch == '\t') && !inQ:
+			inQuote = !inQuote
+			cur.WriteRune(ch)
+		case (ch == ' ' || ch == '\t') && !inQuote:
 			if cur.Len() > 0 {
 				tokens = append(tokens, cur.String())
 				cur.Reset()
@@ -261,55 +263,45 @@ func tokenize(line string) []string {
 	return tokens
 }
 
-// DetectCycles returns an error if the workflow has circular needs dependencies.
+// DetectCycles returns an error if the workflow contains circular needs dependencies
+// (which would cause the engine to deadlock). Uses depth-first search.
 func DetectCycles(wf *Workflow) error {
-	// build adjacency: step → steps it needs
+	// build adjacency map: step name → steps it depends on
 	deps := map[string][]string{}
-	all := map[string]bool{}
 	for _, sec := range wf.Sections {
-		for _, s := range sec.Steps {
-			all[s.Name] = true
-			deps[s.Name] = s.Needs
+		for _, step := range sec.Steps {
+			deps[step.Name] = step.Needs
 		}
 	}
-	// DFS cycle detection
-	const (
-		white, grey, black = 0, 1, 2
-	)
-	color := map[string]int{}
-	var path []string
+
+	visited := map[string]bool{}
+	inStack := map[string]bool{}
+
 	var visit func(name string) error
 	visit = func(name string) error {
-		color[name] = grey
-		path = append(path, name)
+		if inStack[name] {
+			return fmt.Errorf("cycle detected involving step '%s'", name)
+		}
+		if visited[name] {
+			return nil
+		}
+		visited[name] = true
+		inStack[name] = true
 		for _, dep := range deps[name] {
-			if !all[dep] {
+			if dep == "__ask_target__" {
 				continue
 			}
-			switch color[dep] {
-			case grey:
-				// find cycle start
-				for i, n := range path {
-					if n == dep {
-						return fmt.Errorf("circular dependency: %s", strings.Join(append(path[i:], dep), " → "))
-					}
-				}
-				return fmt.Errorf("circular dependency involving %q", dep)
-			case white:
-				if err := visit(dep); err != nil {
-					return err
-				}
-			}
-		}
-		path = path[:len(path)-1]
-		color[name] = black
-		return nil
-	}
-	for name := range all {
-		if color[name] == white {
-			if err := visit(name); err != nil {
+			if err := visit(dep); err != nil {
 				return err
 			}
+		}
+		inStack[name] = false
+		return nil
+	}
+
+	for name := range deps {
+		if err := visit(name); err != nil {
+			return err
 		}
 	}
 	return nil

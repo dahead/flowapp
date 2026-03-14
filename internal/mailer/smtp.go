@@ -14,19 +14,22 @@ import (
 	"strings"
 )
 
-// SMTPMailer sends mail via an SMTP relay.
+// SMTPMailer sends mail via a standard SMTP relay.
+// Leave Username and Password empty for unauthenticated relay (e.g. internal mail servers).
 type SMTPMailer struct {
-	Host string // e.g. "mailrelay.internal"
-	Port int    // e.g. 25 or 587
-	// Optional: leave empty for unauthenticated relay
-	Username string
-	Password string
+	Host     string // SMTP host, e.g. "mailrelay.internal"
+	Port     int    // SMTP port, e.g. 25 or 587
+	Username string // optional: SMTP auth username
+	Password string // optional: SMTP auth password
 }
 
+// NewSMTPMailer constructs an SMTPMailer with the given connection parameters.
 func NewSMTPMailer(host string, port int, username, password string) *SMTPMailer {
 	return &SMTPMailer{Host: host, Port: port, Username: username, Password: password}
 }
 
+// Send builds a MIME message and delivers it via SMTP.
+// Plain auth is used when Username is non-empty; otherwise the connection is unauthenticated.
 func (s *SMTPMailer) Send(msg Message) error {
 	log.Printf("[mailer/smtp] sending email — subject: %q to: %v", msg.Subject, msg.To)
 	var auth smtp.Auth
@@ -50,11 +53,13 @@ func (s *SMTPMailer) Send(msg Message) error {
 	return nil
 }
 
-// buildMIME constructs the full MIME message as a byte slice.
+// buildMIME constructs a complete RFC 2045 MIME message from a Message struct.
+// Without attachments: multipart/alternative (plain + HTML).
+// With attachments: multipart/mixed wrapping multipart/alternative + file parts.
 func buildMIME(msg Message) ([]byte, error) {
 	var buf bytes.Buffer
 
-	// Headers
+	// standard headers
 	buf.WriteString("From: " + msg.From + "\r\n")
 	buf.WriteString("To: " + strings.Join(msg.To, ", ") + "\r\n")
 	if len(msg.CC) > 0 {
@@ -64,7 +69,7 @@ func buildMIME(msg Message) ([]byte, error) {
 	buf.WriteString("MIME-Version: 1.0\r\n")
 
 	if len(msg.Attachments) == 0 {
-		// No attachments: multipart/alternative directly
+		// no attachments: use multipart/alternative directly
 		alt := multipart.NewWriter(&buf)
 		buf.WriteString("Content-Type: multipart/alternative; boundary=" + alt.Boundary() + "\r\n\r\n")
 		if err := writeAlternativeParts(alt, msg); err != nil {
@@ -74,11 +79,11 @@ func buildMIME(msg Message) ([]byte, error) {
 		return buf.Bytes(), nil
 	}
 
-	// With attachments: multipart/mixed wrapping multipart/alternative + attachments
+	// with attachments: multipart/mixed outer wrapper
 	mixed := multipart.NewWriter(&buf)
 	buf.WriteString("Content-Type: multipart/mixed; boundary=" + mixed.Boundary() + "\r\n\r\n")
 
-	// Body part: multipart/alternative inside mixed
+	// inner multipart/alternative body part
 	var altBuf bytes.Buffer
 	alt := multipart.NewWriter(&altBuf)
 	if err := writeAlternativeParts(alt, msg); err != nil {
@@ -94,7 +99,7 @@ func buildMIME(msg Message) ([]byte, error) {
 	}
 	altPart.Write(altBuf.Bytes())
 
-	// Attachments
+	// attachment parts
 	for _, path := range msg.Attachments {
 		if err := writeAttachment(mixed, path); err != nil {
 			return nil, fmt.Errorf("attachment %s: %w", path, err)
@@ -104,8 +109,9 @@ func buildMIME(msg Message) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// writeAlternativeParts writes the plain-text and HTML body parts into a multipart/alternative writer.
 func writeAlternativeParts(w *multipart.Writer, msg Message) error {
-	// Plain
+	// plain text part
 	ph := textproto.MIMEHeader{}
 	ph.Set("Content-Type", "text/plain; charset=utf-8")
 	ph.Set("Content-Transfer-Encoding", "quoted-printable")
@@ -115,7 +121,7 @@ func writeAlternativeParts(w *multipart.Writer, msg Message) error {
 	}
 	pp.Write([]byte(msg.PlainBody))
 
-	// HTML
+	// HTML part
 	hh := textproto.MIMEHeader{}
 	hh.Set("Content-Type", "text/html; charset=utf-8")
 	hh.Set("Content-Transfer-Encoding", "quoted-printable")
@@ -127,6 +133,7 @@ func writeAlternativeParts(w *multipart.Writer, msg Message) error {
 	return nil
 }
 
+// writeAttachment reads a file from disk and appends it as a base64-encoded MIME part.
 func writeAttachment(w *multipart.Writer, path string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -147,8 +154,8 @@ func writeAttachment(w *multipart.Writer, path string) error {
 	if err != nil {
 		return err
 	}
+	// write base64 in 76-character lines per RFC 2045
 	encoded := base64.StdEncoding.EncodeToString(data)
-	// Write in 76-char lines (RFC 2045)
 	for len(encoded) > 76 {
 		part.Write([]byte(encoded[:76] + "\r\n"))
 		encoded = encoded[76:]

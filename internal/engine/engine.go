@@ -11,44 +11,51 @@ import (
 	"time"
 )
 
+// Status represents the lifecycle state of a workflow instance or individual step.
 type Status string
 
 const (
-	StatusPending Status = "pending" // needs not yet satisfied
-	StatusReady   Status = "ready"   // can be acted on
-	StatusAsk     Status = "ask"     // waiting for UI answer
-	StatusGate    Status = "gate"    // waiting for external token
-	StatusDone    Status = "done"
-	StatusSkipped Status = "skipped" // bypassed by ask routing
-	StatusEnded   Status = "ended"   // ends keyword
+	StatusPending Status = "pending" // waiting for dependencies (needs) to be satisfied
+	StatusReady   Status = "ready"   // all dependencies met; can be acted on
+	StatusAsk     Status = "ask"     // waiting for a UI routing decision
+	StatusGate    Status = "gate"    // waiting for an external approval via token link
+	StatusDone    Status = "done"    // successfully completed
+	StatusSkipped Status = "skipped" // bypassed by an ask routing decision
+	StatusEnded   Status = "ended"   // terminal step that explicitly ends the workflow
 )
 
+// Comment is a free-text note attached to an instance or a step.
 type Comment struct {
 	Text      string    `json:"text"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// AuditEntry records a single user action for the instance audit trail.
 type AuditEntry struct {
 	At      time.Time `json:"at"`
-	Action  string    `json:"action"`
-	Section string    `json:"section"`
-	Step    string    `json:"step"`
+	Action  string    `json:"action"`  // "complete", "ask", "gate"
+	Section string    `json:"section"` // section name (currently unused, reserved)
+	Step    string    `json:"step"`    // step name
 	Note    string    `json:"note,omitempty"`
 }
 
+// ListItem is a single checklist entry within a step.
 type ListItem struct {
 	ID       string `json:"id"`
 	Text     string `json:"text"`
-	Required bool   `json:"required"`
+	Required bool   `json:"required"` // if true, must be checked before the step can be advanced
 	Checked  bool   `json:"checked"`
-	Dynamic  bool   `json:"dynamic,omitempty"`
+	Dynamic  bool   `json:"dynamic,omitempty"` // true if added by the user at runtime
 }
 
+// AskState holds the question and routing targets for a branching step.
 type AskState struct {
 	Question string   `json:"question"`
-	Targets  []string `json:"targets"` // ordered target step names
+	Targets  []string `json:"targets"` // step names in button order; chosen index maps to target
 }
 
+// Instance is the runtime state of a single workflow execution.
+// It is serialised to JSON and persisted to disk by the Store.
 type Instance struct {
 	ID           string            `json:"id"`
 	WorkflowName string            `json:"workflow_name"`
@@ -65,47 +72,51 @@ type Instance struct {
 	Comments     []Comment         `json:"comments,omitempty"`
 	Audit        []AuditEntry      `json:"audit,omitempty"`
 
-	// Runtime-only (not persisted)
+	// Runtime-only fields — not persisted to JSON.
+	// Injected by the Store before any engine method is called on a loaded instance.
 	MailSender    Mailer        `json:"-"`
 	EmailResolver EmailResolver `json:"-"`
 }
 
+// SectionState groups a set of steps under a named section.
 type SectionState struct {
 	Name  string       `json:"name"`
 	Steps []*StepState `json:"steps"`
 }
 
+// StepState is the runtime state of a single workflow step.
 type StepState struct {
 	Name       string     `json:"name"`
 	Status     Status     `json:"status"`
 	Note       string     `json:"note,omitempty"`
-	Notify     string     `json:"notify,omitempty"`
-	Assign     string     `json:"assign,omitempty"`
+	Notify     string     `json:"notify,omitempty"`      // email address to notify when step fires
+	Assign     string     `json:"assign,omitempty"`      // assign expression: "user:<n>", "role:<r>", email
 	Schedule   string     `json:"schedule,omitempty"`    // raw schedule expression
-	ScheduleAt *time.Time `json:"schedule_at,omitempty"` // resolved activation time
+	ScheduleAt *time.Time `json:"schedule_at,omitempty"` // resolved activation timestamp
 	Due        string     `json:"due,omitempty"`
 	DueAt      *time.Time `json:"due_at,omitempty"`
 	StartedAt  *time.Time `json:"started_at,omitempty"`
 	UpdatedAt  time.Time  `json:"updated_at"`
-	Needs      []string   `json:"needs,omitempty"`
+	Needs      []string   `json:"needs,omitempty"` // step names that must be done before this activates
 	ListItems  []ListItem `json:"list_items,omitempty"`
 	Ask        *AskState  `json:"ask,omitempty"`
 	Comments   []Comment  `json:"step_comments,omitempty"`
-	Gate       bool       `json:"gate,omitempty"`
-	GateToken  string     `json:"gate_token,omitempty"`
-	GateUsed   bool       `json:"gate_used,omitempty"`
-	Ends       bool       `json:"ends,omitempty"`
-	ChosenIdx  int        `json:"chosen_idx"` // which ask target was chosen; -1 = not yet chosen
+	Gate       bool       `json:"gate,omitempty"`       // true: step waits for external token approval
+	GateToken  string     `json:"gate_token,omitempty"` // one-time approval token
+	GateUsed   bool       `json:"gate_used,omitempty"`  // true once the token has been redeemed
+	Ends       bool       `json:"ends,omitempty"`       // true: completing this step ends the workflow
+	ChosenIdx  int        `json:"chosen_idx"`           // ask/gate routing choice; -1 = not yet chosen
 }
 
-// --- Schedule ---
+// ── Schedule ──────────────────────────────────────────────────────────────────
 
-// parseSchedule resolves a schedule expression relative to instanceStart.
-// Formats: "2025-12-01" (absolute date), "+3d" / "+2w" / "+4h" (relative).
+// parseSchedule resolves a schedule expression to an absolute time relative to instanceStart.
+// Supported formats:
+//   - "2025-12-01"  — absolute date (YYYY-MM-DD)
+//   - "+3d" / "+2w" / "+4h" — relative offset (days, weeks, hours)
 func parseSchedule(s string, instanceStart time.Time) (time.Time, error) {
 	s = strings.TrimSpace(strings.Trim(s, `"`))
 	if strings.HasPrefix(s, "+") {
-		// relative: +Nd / +Nw / +Nh
 		raw := s[1:]
 		if len(raw) < 2 {
 			return time.Time{}, fmt.Errorf("invalid schedule: %s", s)
@@ -124,7 +135,7 @@ func parseSchedule(s string, instanceStart time.Time) (time.Time, error) {
 		}
 		return time.Time{}, fmt.Errorf("unknown schedule unit in '%s'", s)
 	}
-	// absolute date: YYYY-MM-DD
+	// absolute date
 	t, err := time.ParseInLocation("2006-01-02", s, instanceStart.Location())
 	if err != nil {
 		return time.Time{}, fmt.Errorf("invalid schedule date '%s': %w", s, err)
@@ -132,6 +143,7 @@ func parseSchedule(s string, instanceStart time.Time) (time.Time, error) {
 	return t, nil
 }
 
+// setScheduleAt resolves and stores the ScheduleAt timestamp for a step (once only).
 func setScheduleAt(step *StepState, instanceStart time.Time) {
 	if step.Schedule == "" || step.ScheduleAt != nil {
 		return
@@ -144,8 +156,9 @@ func setScheduleAt(step *StepState, instanceStart time.Time) {
 	step.ScheduleAt = &t
 }
 
-// --- Due ---
+// ── Due ───────────────────────────────────────────────────────────────────────
 
+// parseDue converts a due string (e.g. "2h", "3d", "1w") to a time.Duration.
 func parseDue(s string) (time.Duration, error) {
 	s = strings.TrimSpace(strings.ToLower(s))
 	if len(s) < 2 {
@@ -166,6 +179,7 @@ func parseDue(s string) (time.Duration, error) {
 	return 0, fmt.Errorf("unknown due unit in '%s'", s)
 }
 
+// setDueAt resolves and stores the DueAt timestamp for a step (once only).
 func setDueAt(step *StepState, now time.Time) {
 	if step.Due == "" || step.DueAt != nil {
 		return
@@ -178,6 +192,7 @@ func setDueAt(step *StepState, now time.Time) {
 	step.DueAt = &t
 }
 
+// DueLabel returns a human-readable due status string, e.g. "due in 2d" or "⚠ overdue 3h ago".
 func (s *StepState) DueLabel() string {
 	if s.DueAt == nil {
 		return ""
@@ -189,11 +204,13 @@ func (s *StepState) DueLabel() string {
 	return "due in " + formatDur(diff)
 }
 
+// IsOverdue returns true if the step has a due date that has passed and is not yet terminal.
 func (s *StepState) IsOverdue() bool {
 	return s.DueAt != nil && time.Now().After(*s.DueAt) &&
 		s.Status != StatusDone && s.Status != StatusSkipped && s.Status != StatusEnded
 }
 
+// formatDur formats a duration as a short human-readable string (e.g. "45m", "3h", "5d", "2w").
 func formatDur(d time.Duration) string {
 	if d < time.Hour {
 		return fmt.Sprintf("%dm", int(d.Minutes()))
@@ -208,6 +225,7 @@ func formatDur(d time.Duration) string {
 	return fmt.Sprintf("%dw", days/7)
 }
 
+// RequiredListBlocked returns true if any required checklist items remain unchecked.
 func (s *StepState) RequiredListBlocked() bool {
 	for _, li := range s.ListItems {
 		if li.Required && !li.Checked {
@@ -217,30 +235,36 @@ func (s *StepState) RequiredListBlocked() bool {
 	return false
 }
 
-// --- Token ---
+// ── Token ─────────────────────────────────────────────────────────────────────
 
+// generateToken creates a cryptographically random 48-character hex token for gate steps.
 func generateToken() string {
 	b := make([]byte, 24)
 	rand.Read(b)
 	return hex.EncodeToString(b)
 }
 
-// --- Instance ---
+// ── Instance construction ─────────────────────────────────────────────────────
 
+// NewInstance creates a new workflow instance from a parsed workflow definition.
+// m and r are optional: pass nil for both in tests or when no mailer is configured.
+// Initial activation (steps with no unmet needs) runs immediately, so notifications
+// fire correctly for steps that become ready at creation time.
 func NewInstance(id, title string, wf *dsl.Workflow, m Mailer, r EmailResolver) *Instance {
 	now := time.Now()
 	inst := &Instance{
 		ID: id, WorkflowName: wf.Name, Title: title,
 		Labels: wf.Labels, Priority: wf.Priority,
 		CreatedAt: now, UpdatedAt: now, Status: StatusReady,
-		Vars:       make(map[string]string),
-		MailSender: m, EmailResolver: r,
+		Vars:          make(map[string]string),
+		MailSender:    m,
+		EmailResolver: r,
 	}
 	if inst.Priority == "" {
 		inst.Priority = "medium"
 	}
 
-	// collect all ask targets so we can keep them pending until explicitly routed
+	// collect ask target names so we can keep them pending until explicitly routed
 	askTargets := map[string]bool{}
 	for _, sec := range wf.Sections {
 		for _, step := range sec.Steps {
@@ -259,7 +283,7 @@ func NewInstance(id, title string, wf *dsl.Workflow, m Mailer, r EmailResolver) 
 			if step.Ask != nil {
 				askSt = &AskState{Question: step.Ask.Question, Targets: step.Ask.Targets}
 			}
-			// ask targets that have no explicit needs get a sentinel so they stay pending
+			// ask targets without explicit needs get a sentinel so they stay pending
 			needs := step.Needs
 			if askTargets[step.Name] && len(step.Needs) == 0 {
 				needs = []string{"__ask_target__"}
@@ -281,23 +305,27 @@ func NewInstance(id, title string, wf *dsl.Workflow, m Mailer, r EmailResolver) 
 		inst.Sections = append(inst.Sections, ss)
 	}
 
-	// initial activation: steps with no needs become ready
+	// activate all steps whose needs are already satisfied
 	inst.activateReady(now)
 	return inst
 }
 
-// ApplyVars substitutes $VAR_NAME in step notes, names etc. after instance creation
+// ── Variable substitution ─────────────────────────────────────────────────────
+
+// ApplyVars substitutes $VAR_NAME or ${VAR_NAME} placeholders in the instance title
+// and in step notes and notify fields. Called after instance creation when the user
+// has provided variable values.
 func (inst *Instance) ApplyVars(vars map[string]string) {
 	inst.Vars = vars
-	// substitute in title
 	inst.Title = substituteVars(inst.Title, vars)
-	// substitute in step notes and names
 	inst.allSteps(func(s *StepState) {
 		s.Note = substituteVars(s.Note, vars)
 		s.Notify = substituteVars(s.Notify, vars)
 	})
 }
 
+// substituteVars replaces all $KEY and ${KEY} occurrences in s with the corresponding
+// values from vars.
 func substituteVars(s string, vars map[string]string) string {
 	for k, v := range vars {
 		s = strings.ReplaceAll(s, "$"+k, v)
@@ -306,8 +334,11 @@ func substituteVars(s string, vars map[string]string) string {
 	return s
 }
 
-// activateReady scans all steps and activates those whose needs are satisfied
-// and whose schedule (if any) has been reached.
+// ── Activation ────────────────────────────────────────────────────────────────
+
+// activateReady scans all pending steps and activates those whose needs are satisfied
+// and whose scheduled time (if any) has been reached. Repeats until no further changes
+// occur to handle cascading dependencies.
 func (inst *Instance) activateReady(now time.Time) {
 	changed := true
 	for changed {
@@ -320,7 +351,7 @@ func (inst *Instance) activateReady(now time.Time) {
 				return
 			}
 			if s.ScheduleAt != nil && now.Before(*s.ScheduleAt) {
-				return // scheduled for the future
+				return // not yet time
 			}
 			log.Printf("[engine] activating step '%s' (was pending)", s.Name)
 			inst.activate(s, now)
@@ -329,8 +360,9 @@ func (inst *Instance) activateReady(now time.Time) {
 	}
 }
 
-// TickScheduled activates any pending steps whose schedule time has arrived.
-// Call this periodically (e.g. every minute) from a background goroutine.
+// TickScheduled activates any pending steps whose scheduled time has arrived.
+// Intended to be called periodically (e.g. every minute) by the Store's background scheduler.
+// Returns true if at least one step was activated (caller should persist the instance).
 func (inst *Instance) TickScheduled() bool {
 	now := time.Now()
 	var activated bool
@@ -349,12 +381,13 @@ func (inst *Instance) TickScheduled() bool {
 		activated = true
 	})
 	if activated {
-		inst.activateReady(now) // cascade
+		inst.activateReady(now) // cascade to any newly unblocked steps
 		inst.UpdatedAt = now
 	}
 	return activated
 }
 
+// needsSatisfied returns true if all steps listed in s.Needs are in a terminal state.
 func (inst *Instance) needsSatisfied(s *StepState) bool {
 	if len(s.Needs) == 0 {
 		return true
@@ -368,6 +401,8 @@ func (inst *Instance) needsSatisfied(s *StepState) bool {
 	return true
 }
 
+// activate transitions a pending step to its active state (ready, ask, or gate),
+// sets timestamps and due date, and fires any notifications asynchronously.
 func (inst *Instance) activate(s *StepState, now time.Time) {
 	if s.Gate {
 		s.Status = StatusGate
@@ -380,19 +415,23 @@ func (inst *Instance) activate(s *StepState, now time.Time) {
 	s.StartedAt = &now
 	s.UpdatedAt = now
 	setDueAt(s, now)
+	// gate steps send the approval link notification on activation, not on completion
 	if s.Notify != "" && s.Gate {
 		m, r := inst.MailSender, inst.EmailResolver
 		scopy := *s
-		go fireNotify(inst, &scopy, m, r) // send gate link on activation
+		go fireNotify(inst, &scopy, m, r)
 	}
 	if s.Assign != "" {
 		m, r := inst.MailSender, inst.EmailResolver
 		scopy := *s
-		go fireAssignNotify(inst, &scopy, m, r) // notify assignee
+		go fireAssignNotify(inst, &scopy, m, r)
 	}
 }
 
-// AdvanceStep — complete a ready step
+// ── Step operations ───────────────────────────────────────────────────────────
+
+// StepByName returns the step with the given name, or nil if not found.
+// Exported for use by HTTP handlers that need to check step state before acting.
 func (inst *Instance) StepByName(name string) *StepState {
 	for _, sec := range inst.Sections {
 		for _, s := range sec.Steps {
@@ -404,6 +443,8 @@ func (inst *Instance) StepByName(name string) *StepState {
 	return nil
 }
 
+// AdvanceStep completes a ready step, triggers cascading activation,
+// and fires any on-completion notifications.
 func (inst *Instance) AdvanceStep(stepName string) error {
 	now := time.Now()
 	s := inst.findStepByName(stepName)
@@ -421,7 +462,9 @@ func (inst *Instance) AdvanceStep(stepName string) error {
 	return inst.completeStep(s, now)
 }
 
-// AnswerAsk — choose an ask target by index
+// AnswerAsk resolves a branching ask step by choosing one of its routing targets.
+// The chosen target has its sentinel need removed (so it can activate); all other
+// targets are skipped.
 func (inst *Instance) AnswerAsk(stepName string, chosenIdx int) error {
 	now := time.Now()
 	s := inst.findStepByName(stepName)
@@ -438,14 +481,13 @@ func (inst *Instance) AnswerAsk(stepName string, chosenIdx int) error {
 	chosen := s.Ask.Targets[chosenIdx]
 	inst.audit("ask", stepName, fmt.Sprintf("→ %s", chosen))
 
-	// skip all other ask targets; clear sentinel from chosen target
 	for i, target := range s.Ask.Targets {
 		t := inst.findStepByName(target)
 		if t == nil {
 			continue
 		}
 		if i == chosenIdx {
-			// clear sentinel so activateReady can activate it
+			// remove the sentinel so activateReady can pick it up
 			t.Needs = filterNeeds(t.Needs)
 		} else if t.Status == StatusPending {
 			t.Status = StatusSkipped
@@ -456,7 +498,9 @@ func (inst *Instance) AnswerAsk(stepName string, chosenIdx int) error {
 	return inst.completeStep(s, now)
 }
 
-// RedeemGate — external approval via token
+// RedeemGate validates an approval token and completes the corresponding gate step.
+// For gate steps with an ask definition, the chosen routing index is applied.
+// For simple gate steps (no ask), the step is completed without routing.
 func (inst *Instance) RedeemGate(token string, chosenIdx int) (*StepState, error) {
 	now := time.Now()
 	var found *StepState
@@ -471,13 +515,16 @@ func (inst *Instance) RedeemGate(token string, chosenIdx int) (*StepState, error
 	if found.DueAt != nil && time.Now().After(*found.DueAt) {
 		return nil, fmt.Errorf("approval link has expired")
 	}
+
+	// simple gate (no routing): just complete
 	if found.Ask == nil {
-		// simple gate: no routing, just complete
 		inst.audit("gate", found.Name, "approved (token)")
 		found.GateUsed = true
 		err := inst.completeStep(found, now)
 		return found, err
 	}
+
+	// gate with ask routing
 	if chosenIdx < 0 || chosenIdx >= len(found.Ask.Targets) {
 		return nil, fmt.Errorf("invalid choice index %d", chosenIdx)
 	}
@@ -503,10 +550,13 @@ func (inst *Instance) RedeemGate(token string, chosenIdx int) (*StepState, error
 	return found, err
 }
 
+// completeStep marks a step done, fires on-completion notifications asynchronously,
+// and cascades activation to any newly unblocked steps.
 func (inst *Instance) completeStep(s *StepState, now time.Time) error {
 	s.Status = StatusDone
 	s.UpdatedAt = now
-	if s.Notify != "" && !s.Gate { // gate already fired on activation
+	// gate steps already sent their notification on activation
+	if s.Notify != "" && !s.Gate {
 		m, r := inst.MailSender, inst.EmailResolver
 		scopy := *s
 		go fireNotify(inst, &scopy, m, r)
@@ -520,6 +570,8 @@ func (inst *Instance) completeStep(s *StepState, now time.Time) error {
 	return nil
 }
 
+// recalc updates the overall instance status.
+// If all steps are terminal the instance is marked done and auto-archived.
 func (inst *Instance) recalc() {
 	allTerminal := true
 	inst.allSteps(func(s *StepState) {
@@ -535,6 +587,9 @@ func (inst *Instance) recalc() {
 	}
 }
 
+// ── Progress & overdue ────────────────────────────────────────────────────────
+
+// Progress returns the number of completed steps and the total step count.
 func (inst *Instance) Progress() (int, int) {
 	done, total := 0, 0
 	inst.allSteps(func(s *StepState) {
@@ -546,6 +601,7 @@ func (inst *Instance) Progress() (int, int) {
 	return done, total
 }
 
+// HasOverdue returns true if any active step has passed its due date.
 func (inst *Instance) HasOverdue() bool {
 	found := false
 	inst.allSteps(func(s *StepState) {
@@ -556,8 +612,9 @@ func (inst *Instance) HasOverdue() bool {
 	return found
 }
 
-// --- List items ---
+// ── List items ────────────────────────────────────────────────────────────────
 
+// ToggleListItem flips the checked state of a single checklist item within a step.
 func (inst *Instance) ToggleListItem(stepName, itemID string) error {
 	s := inst.findStepByName(stepName)
 	if s == nil {
@@ -577,6 +634,7 @@ func (inst *Instance) ToggleListItem(stepName, itemID string) error {
 	return fmt.Errorf("list item '%s' not found", itemID)
 }
 
+// CheckAllListItems marks every checklist item in the step as checked.
 func (inst *Instance) CheckAllListItems(stepName string) {
 	s := inst.findStepByName(stepName)
 	if s == nil {
@@ -592,6 +650,7 @@ func (inst *Instance) CheckAllListItems(stepName string) {
 	inst.UpdatedAt = time.Now()
 }
 
+// AddListItem appends a new dynamic (user-created) checklist item to an active step.
 func (inst *Instance) AddListItem(stepName, text string) error {
 	s := inst.findStepByName(stepName)
 	if s == nil {
@@ -607,8 +666,9 @@ func (inst *Instance) AddListItem(stepName, text string) error {
 	return nil
 }
 
-// --- Comments ---
+// ── Comments ──────────────────────────────────────────────────────────────────
 
+// AddStepComment appends a comment to a specific step. Text is truncated at 500 characters.
 func (inst *Instance) AddStepComment(stepName, text string) error {
 	s := inst.findStepByName(stepName)
 	if s == nil {
@@ -622,6 +682,8 @@ func (inst *Instance) AddStepComment(stepName, text string) error {
 	return nil
 }
 
+// AddComment appends a comment to the instance as a whole. Text is truncated at 255 characters.
+// Returns an error if the instance is already completed.
 func (inst *Instance) AddComment(text string) error {
 	if inst.Status == StatusDone {
 		return fmt.Errorf("cannot add comments to a completed workflow")
@@ -634,16 +696,19 @@ func (inst *Instance) AddComment(text string) error {
 	return nil
 }
 
-// --- Audit ---
+// ── Audit ─────────────────────────────────────────────────────────────────────
 
+// audit appends an entry to the instance audit trail.
 func (inst *Instance) audit(action, step, note string) {
 	inst.Audit = append(inst.Audit, AuditEntry{
 		At: time.Now(), Action: action, Step: step, Note: note,
 	})
 }
 
-// --- Helpers ---
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
+// AllStepsDue calls fn with the DueAt time of every step that has one.
+// Used by the board to check due-date filters.
 func (inst *Instance) AllStepsDue(fn func(time.Time)) {
 	inst.allSteps(func(s *StepState) {
 		if s.DueAt != nil {
@@ -652,6 +717,7 @@ func (inst *Instance) AllStepsDue(fn func(time.Time)) {
 	})
 }
 
+// allSteps iterates over every step in every section and calls fn.
 func (inst *Instance) allSteps(fn func(*StepState)) {
 	for _, sec := range inst.Sections {
 		for _, s := range sec.Steps {
@@ -660,6 +726,7 @@ func (inst *Instance) allSteps(fn func(*StepState)) {
 	}
 }
 
+// findStepByName returns the first step with the given name, or nil.
 func (inst *Instance) findStepByName(name string) *StepState {
 	var found *StepState
 	inst.allSteps(func(s *StepState) {
@@ -670,7 +737,8 @@ func (inst *Instance) findStepByName(name string) *StepState {
 	return found
 }
 
-// FindStepByToken for external gate redemption
+// FindStepByToken returns the step that holds the given gate token, or nil.
+// Used by the Store to locate the instance for an incoming approval link.
 func (inst *Instance) FindStepByToken(token string) *StepState {
 	var found *StepState
 	inst.allSteps(func(s *StepState) {
@@ -681,6 +749,8 @@ func (inst *Instance) FindStepByToken(token string) *StepState {
 	return found
 }
 
+// filterNeeds removes the internal "__ask_target__" sentinel from a needs slice,
+// leaving only real step-name dependencies.
 func filterNeeds(needs []string) []string {
 	var out []string
 	for _, n := range needs {
@@ -691,15 +761,20 @@ func filterNeeds(needs []string) []string {
 	return out
 }
 
-// EmailResolver maps an assign/notify expression to a list of email addresses.
+// ── Mailer types ──────────────────────────────────────────────────────────────
+
+// EmailResolver maps an assign/notify expression to a list of resolved email addresses.
+// Implemented by auth.UserStore.ResolveEmails.
 type EmailResolver func(expr string) []string
 
-// Mailer sends an email message. Matches mailer.Mailer interface.
+// Mailer dispatches a single outbound email message.
+// Defined here (rather than in the mailer package) to avoid an import cycle.
 type Mailer interface {
 	Send(msg MailMessage) error
 }
 
-// MailMessage mirrors mailer.Message to avoid an import cycle.
+// MailMessage is a minimal email representation used within the engine.
+// It mirrors mailer.Message but lives here to keep the engine package dependency-free.
 type MailMessage struct {
 	From      string
 	To        []string
@@ -708,6 +783,10 @@ type MailMessage struct {
 	HTMLBody  string
 }
 
+// ── Notification helpers ──────────────────────────────────────────────────────
+
+// fireAssignNotify logs and emails an assignment notification for a step.
+// The email is sent asynchronously; errors are logged but not propagated.
 func fireAssignNotify(inst *Instance, step *StepState, m Mailer, resolve EmailResolver) {
 	logLine := fmt.Sprintf("[%s] ASSIGN → %s | instance: %s (%s) | step: %s",
 		time.Now().Format(time.RFC3339), step.Assign,
@@ -733,6 +812,9 @@ func fireAssignNotify(inst *Instance, step *StepState, m Mailer, resolve EmailRe
 	}
 }
 
+// fireNotify logs and emails a step-ready notification.
+// For gate steps the approval link is included in the message body.
+// The email is sent asynchronously; errors are logged but not propagated.
 func fireNotify(inst *Instance, step *StepState, m Mailer, resolve EmailResolver) {
 	gateURL := ""
 	if step.Gate && step.GateToken != "" {

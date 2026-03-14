@@ -13,21 +13,20 @@ import (
 	"time"
 )
 
-// GraphMailer sends mail via Microsoft Graph API (v1.0).
-// Requires an OAuth2 access token with Mail.Send permission.
+// GraphMailer sends mail via the Microsoft Graph API (v1.0) using OAuth2 client credentials.
+// Requires Mail.Send permission on the Azure application registration.
 type GraphMailer struct {
-	// TenantID, ClientID, ClientSecret for client credentials flow
-	TenantID     string
-	ClientID     string
-	ClientSecret string
-	// SenderUPN is the UPN/email of the mailbox to send from (e.g. "workflow@example.com")
-	SenderUPN string
+	TenantID     string // Azure AD tenant ID
+	ClientID     string // Azure app client ID
+	ClientSecret string // Azure app client secret
+	SenderUPN    string // UPN of the sending mailbox, e.g. "workflow@example.com"
 
-	// token cache
+	// cached OAuth2 token to avoid a round-trip on every send
 	cachedToken    string
 	tokenExpiresAt time.Time
 }
 
+// NewGraphMailer constructs a GraphMailer with the given Azure AD credentials.
 func NewGraphMailer(tenantID, clientID, clientSecret, senderUPN string) *GraphMailer {
 	return &GraphMailer{
 		TenantID:     tenantID,
@@ -37,6 +36,8 @@ func NewGraphMailer(tenantID, clientID, clientSecret, senderUPN string) *GraphMa
 	}
 }
 
+// Send acquires an access token (from cache if still valid) and delivers the message
+// via the Graph sendMail endpoint.
 func (g *GraphMailer) Send(msg Message) error {
 	log.Printf("[mailer/graph] sending email — subject: %q to: %v", msg.Subject, msg.To)
 	token, err := g.getToken()
@@ -52,7 +53,8 @@ func (g *GraphMailer) Send(msg Message) error {
 	return nil
 }
 
-// getToken fetches an access token via client credentials grant.
+// getToken returns a valid OAuth2 access token, re-fetching from Azure AD only when the
+// cached token has expired. Tokens are cached for 55 minutes (Graph tokens are valid for 1 hour).
 func (g *GraphMailer) getToken() (string, error) {
 	if g.cachedToken != "" && time.Now().Before(g.tokenExpiresAt) {
 		return g.cachedToken, nil
@@ -86,7 +88,8 @@ func (g *GraphMailer) getToken() (string, error) {
 	return g.cachedToken, nil
 }
 
-// Graph API message payload types
+// Graph API JSON payload types
+
 type graphMessage struct {
 	Message         graphMail `json:"message"`
 	SaveToSentItems bool      `json:"saveToSentItems"`
@@ -117,9 +120,10 @@ type graphAttach struct {
 	OdataType    string `json:"@odata.type"`
 	Name         string `json:"name"`
 	ContentType  string `json:"contentType"`
-	ContentBytes string `json:"contentBytes"` // base64
+	ContentBytes string `json:"contentBytes"` // base64-encoded file contents
 }
 
+// toRecipients converts a slice of email address strings to Graph API recipient objects.
 func toRecipients(addrs []string) []graphRecipient {
 	out := make([]graphRecipient, len(addrs))
 	for i, a := range addrs {
@@ -128,8 +132,9 @@ func toRecipients(addrs []string) []graphRecipient {
 	return out
 }
 
+// sendMail serialises the message as JSON and POSTs it to the Graph sendMail endpoint.
 func (g *GraphMailer) sendMail(token string, msg Message) error {
-	// Prefer HTML body; fall back to plain
+	// prefer HTML body; fall back to plain text
 	bodyContent := msg.HTMLBody
 	bodyType := "HTML"
 	if bodyContent == "" {
@@ -147,17 +152,16 @@ func (g *GraphMailer) sendMail(token string, msg Message) error {
 		},
 	}
 
-	// Attachments
+	// encode any file attachments as base64
 	for _, path := range msg.Attachments {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			return fmt.Errorf("read attachment %s: %w", path, err)
 		}
-		mimeType := "application/octet-stream"
 		payload.Message.Attachments = append(payload.Message.Attachments, graphAttach{
 			OdataType:    "#microsoft.graph.fileAttachment",
 			Name:         filepath.Base(path),
-			ContentType:  mimeType,
+			ContentType:  "application/octet-stream",
 			ContentBytes: base64.StdEncoding.EncodeToString(data),
 		})
 	}

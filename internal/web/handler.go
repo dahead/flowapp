@@ -16,6 +16,8 @@ import (
 	"time"
 )
 
+// Handler holds all HTTP handler state: the data store, user store,
+// compiled templates, and the login rate limiter.
 type Handler struct {
 	store     *store.Store
 	users     *auth.UserStore
@@ -27,6 +29,8 @@ type ctxKey string
 
 const ctxUserKey ctxKey = "user"
 
+// New creates a Handler, compiling all HTML templates from the given glob pattern
+// and registering custom template functions used by the views.
 func New(s *store.Store, users *auth.UserStore, tmplGlob string) (*Handler, error) {
 	tmpl, err := template.New("").Funcs(template.FuncMap{
 		"lower":               strings.ToLower,
@@ -40,6 +44,7 @@ func New(s *store.Store, users *auth.UserStore, tmplGlob string) (*Handler, erro
 		"isDone":              func(s *engine.StepState) bool { return s.Status == engine.StatusDone || s.Status == engine.StatusEnded },
 		"isSkipped":           func(s *engine.StepState) bool { return s.Status == engine.StatusSkipped },
 		"isPending":           func(s *engine.StepState) bool { return s.Status == engine.StatusPending },
+		// statusIcon returns a single character representing the step's current status.
 		"statusIcon": func(s *engine.StepState) string {
 			switch s.Status {
 			case engine.StatusDone, engine.StatusEnded:
@@ -56,6 +61,7 @@ func New(s *store.Store, users *auth.UserStore, tmplGlob string) (*Handler, erro
 				return "○"
 			}
 		},
+		// iterate produces a slice [0, 1, ..., n-1] for range loops in templates.
 		"iterate": func(n int) []int {
 			r := make([]int, n)
 			for i := range r {
@@ -65,6 +71,7 @@ func New(s *store.Store, users *auth.UserStore, tmplGlob string) (*Handler, erro
 		},
 		"not":   func(b bool) bool { return !b },
 		"slice": func(a ...string) []string { return a },
+		// visibleNeeds filters out the internal "__ask_target__" sentinel from the needs list.
 		"visibleNeeds": func(needs []string) string {
 			var out []string
 			for _, n := range needs {
@@ -79,6 +86,7 @@ func New(s *store.Store, users *auth.UserStore, tmplGlob string) (*Handler, erro
 		"hasActiveFilters": func(d boardData) bool {
 			return d.FilterQ != "" || len(d.FilterPriorities) > 0 || len(d.FilterLabels) > 0 || d.FilterDue != "" || d.FilterCreated != "" || d.FilterAssign != ""
 		},
+		// roleLabel returns a display-friendly label for a user role.
 		"roleLabel": func(r auth.Role) string {
 			switch r {
 			case auth.RoleAdmin:
@@ -91,6 +99,7 @@ func New(s *store.Store, users *auth.UserStore, tmplGlob string) (*Handler, erro
 			return string(r)
 		},
 		"isAdmin": func(u *auth.User) bool { return u != nil && u.CanAdmin() },
+		// initial returns the first rune of a string, used for avatar initials.
 		"initial": func(s string) string {
 			if len(s) == 0 {
 				return "?"
@@ -105,8 +114,9 @@ func New(s *store.Store, users *auth.UserStore, tmplGlob string) (*Handler, erro
 			}
 			return done * 100 / total
 		},
+		// ringOffset computes the SVG stroke-dashoffset for a progress ring.
+		// circumference = 2 * π * 22 ≈ 138.2
 		"ringOffset": func(done, total int) float64 {
-			// circumference = 2*pi*22 ≈ 138.2
 			const circ = 138.2
 			if total == 0 {
 				return circ
@@ -114,8 +124,9 @@ func New(s *store.Store, users *auth.UserStore, tmplGlob string) (*Handler, erro
 			return circ - (float64(done)/float64(total))*circ
 		},
 		"canWrite": func(u *auth.User) bool { return u != nil && u.CanWrite() },
-		// canDoStep: user can act on a step — must have write access AND either:
-		// the step has no assign, OR the user is admin, OR the user matches the assign.
+		// canDoStep returns true if the user may act on a step.
+		// Admins and steps without an assign field are always allowed.
+		// Otherwise the user must match the assign expression.
 		"canDoStep": func(u *auth.User, s *engine.StepState) bool {
 			if u == nil || !u.CanWrite() {
 				return false
@@ -123,11 +134,9 @@ func New(s *store.Store, users *auth.UserStore, tmplGlob string) (*Handler, erro
 			if u.CanAdmin() || s.Assign == "" {
 				return true
 			}
-			// match user:<name> or email or name
 			if s.Assign == "user:"+u.Name || s.Assign == "user:"+u.Email || s.Assign == u.Name || s.Assign == u.Email {
 				return true
 			}
-			// match role:<rolename>
 			if strings.HasPrefix(s.Assign, "role:") {
 				roleName := strings.TrimPrefix(s.Assign, "role:")
 				return slices.Contains(u.AppRoles, roleName)
@@ -141,8 +150,10 @@ func New(s *store.Store, users *auth.UserStore, tmplGlob string) (*Handler, erro
 	return &Handler{store: s, users: users, templates: tmpl, loginRL: auth.NewRateLimiter()}, nil
 }
 
-// ── Auth middleware ──
+// ── Auth middleware ────────────────────────────────────────────────────────────
 
+// currentUser reads the session cookie and returns the authenticated user,
+// or nil if the session is missing, invalid, or the user is inactive.
 func (h *Handler) currentUser(r *http.Request) *auth.User {
 	id, err := auth.GetSessionUserID(r)
 	if err != nil {
@@ -155,6 +166,7 @@ func (h *Handler) currentUser(r *http.Request) *auth.User {
 	return u
 }
 
+// requireAuth wraps a handler to redirect unauthenticated requests to /login.
 func (h *Handler) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		u := h.currentUser(r)
@@ -166,6 +178,7 @@ func (h *Handler) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// requireWrite wraps a handler to deny access to users without write permission.
 func (h *Handler) requireWrite(next http.HandlerFunc) http.HandlerFunc {
 	return h.requireAuth(func(w http.ResponseWriter, r *http.Request) {
 		u := h.currentUser(r)
@@ -177,6 +190,7 @@ func (h *Handler) requireWrite(next http.HandlerFunc) http.HandlerFunc {
 	})
 }
 
+// requireAdmin wraps a handler to deny access to non-admin users.
 func (h *Handler) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
 	return h.requireAuth(func(w http.ResponseWriter, r *http.Request) {
 		u := h.currentUser(r)
@@ -188,19 +202,20 @@ func (h *Handler) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
 	})
 }
 
-// ── Routes ──
+// ── Routes ────────────────────────────────────────────────────────────────────
 
+// RegisterRoutes registers all HTTP routes on the given mux.
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
-	// setup (only when no users exist)
+	// first-run setup (only accessible before any users exist)
 	mux.HandleFunc("GET /setup", h.setupPage)
 	mux.HandleFunc("POST /setup", h.setupSubmit)
-	// auth
+	// authentication
 	mux.HandleFunc("GET /login", h.loginPage)
 	mux.HandleFunc("POST /login", h.loginSubmit)
 	mux.HandleFunc("POST /logout", h.logout)
 	mux.HandleFunc("GET /profile", h.requireAuth(h.profilePage))
 	mux.HandleFunc("POST /profile", h.requireAuth(h.profileSave))
-	// app (auth required)
+	// main app (auth required)
 	mux.HandleFunc("GET /", h.requireAuth(h.board))
 	mux.HandleFunc("GET /builder", h.requireAuth(h.builder))
 	mux.HandleFunc("GET /archive", h.requireAuth(h.archive))
@@ -219,9 +234,11 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /instance/{id}/listitem/add", h.requireWrite(h.addListItem))
 	mux.HandleFunc("POST /instance/{id}/listitem/checkall", h.requireWrite(h.checkAllListItems))
 	mux.HandleFunc("POST /reorder", h.requireWrite(h.reorder))
-	// gate approval — no auth, token is the credential
+	// static assets
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.Dir("internal/web/static"))))
+	// public API
 	mux.HandleFunc("GET /api/workflows", h.apiWorkflows)
+	// gate approval — no login required; the token is the credential
 	mux.HandleFunc("GET /approve/{token}", h.approvalPage)
 	mux.HandleFunc("POST /approve/{token}", h.approvalSubmit)
 	// admin
@@ -232,8 +249,10 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /admin/users/{id}/password", h.requireAdmin(h.adminResetPassword))
 }
 
-// ── Setup ──
+// ── Setup ─────────────────────────────────────────────────────────────────────
 
+// setupPage renders the first-run admin creation form.
+// Redirects to / if users already exist.
 func (h *Handler) setupPage(w http.ResponseWriter, r *http.Request) {
 	if !h.users.Empty() {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
@@ -242,6 +261,7 @@ func (h *Handler) setupPage(w http.ResponseWriter, r *http.Request) {
 	h.render(w, r, "setup.html", map[string]string{"Error": ""})
 }
 
+// setupSubmit handles the first-run admin creation form submission.
 func (h *Handler) setupSubmit(w http.ResponseWriter, r *http.Request) {
 	if !h.users.Empty() {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
@@ -273,8 +293,10 @@ func (h *Handler) setupSubmit(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
-// ── Login / Logout ──
+// ── Login / Logout ────────────────────────────────────────────────────────────
 
+// loginPage renders the login form.
+// Redirects to / if already authenticated, or to /setup if no users exist yet.
 func (h *Handler) loginPage(w http.ResponseWriter, r *http.Request) {
 	if !h.users.Empty() && h.currentUser(r) != nil {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
@@ -287,6 +309,8 @@ func (h *Handler) loginPage(w http.ResponseWriter, r *http.Request) {
 	h.render(w, r, "login.html", map[string]string{"Error": "", "Next": r.URL.Query().Get("next")})
 }
 
+// loginSubmit validates credentials and creates a session on success.
+// Rate-limited by loginRL to prevent brute-force attacks.
 func (h *Handler) loginSubmit(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	email := strings.TrimSpace(r.FormValue("email"))
@@ -310,11 +334,12 @@ func (h *Handler) loginSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	log.Printf("[web] login successful for %s (%s)", u.ID, email)
-	h.loginRL.Reset(r) // clear on success
+	h.loginRL.Reset(r) // clear rate-limit counter on successful login
 	auth.SetSession(w, u.ID)
 	http.Redirect(w, r, next, http.StatusSeeOther)
 }
 
+// logout clears the session cookie and redirects to /login.
 func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {
 	if u := h.currentUser(r); u != nil {
 		log.Printf("[web] logout for user %s (%s)", u.ID, u.Email)
@@ -323,8 +348,9 @@ func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
-// ── Board ──
+// ── Board ─────────────────────────────────────────────────────────────────────
 
+// card is the view model for a single instance card on the Kanban board.
 type card struct {
 	ID, Title, WorkflowName string
 	Done, Total, Pct        int
@@ -335,11 +361,13 @@ type card struct {
 	CreatedAt, UpdatedAt    string
 }
 
+// column groups cards under a Kanban column heading.
 type column struct {
 	Title string
 	Cards []card
 }
 
+// boardData is the view model passed to the board template.
 type boardData struct {
 	Columns          []column
 	Definitions      []string
@@ -355,6 +383,7 @@ type boardData struct {
 	CurrentUser      *auth.User
 }
 
+// board renders the main Kanban board, applying any active filters from query parameters.
 func (h *Handler) board(w http.ResponseWriter, r *http.Request) {
 	u := h.currentUser(r)
 	q := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
@@ -363,7 +392,7 @@ func (h *Handler) board(w http.ResponseWriter, r *http.Request) {
 	filterDue := r.URL.Query().Get("due")
 	filterCreated := r.URL.Query().Get("created")
 	filterSort := r.URL.Query().Get("sort")
-	filterAssign := r.URL.Query().Get("assign") // "me" or explicit value
+	filterAssign := r.URL.Query().Get("assign") // "me" or an explicit assign expression
 	for i, l := range filterLabels {
 		filterLabels[i] = strings.ToLower(l)
 	}
@@ -464,6 +493,7 @@ func (h *Handler) board(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// addStepComment handles POST requests to append a comment to a step.
 func (h *Handler) addStepComment(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	r.ParseForm()
@@ -477,6 +507,8 @@ func (h *Handler) addStepComment(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/instance/"+id, http.StatusSeeOther)
 }
 
+// newInstancePrompt renders the new-instance form, which collects variable values
+// if the workflow declares any vars. If there are no vars, the instance is created immediately.
 func (h *Handler) newInstancePrompt(w http.ResponseWriter, r *http.Request) {
 	wfName := r.PathValue("workflow")
 	title := r.URL.Query().Get("title")
@@ -497,7 +529,7 @@ func (h *Handler) newInstancePrompt(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	// no vars — create directly
+	// no vars — create directly without showing the prompt page
 	if _, err := h.store.CreateInstance(wfName, title, priority); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -505,6 +537,7 @@ func (h *Handler) newInstancePrompt(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
+// archive renders the archive page with optional text search filtering.
 func (h *Handler) archive(w http.ResponseWriter, r *http.Request) {
 	u := h.currentUser(r)
 	q := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
@@ -525,18 +558,21 @@ func (h *Handler) archive(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// builder renders the visual workflow builder page.
 func (h *Handler) builder(w http.ResponseWriter, r *http.Request) {
 	h.render(w, r, "builder.html", map[string]interface{}{"CurrentUser": h.currentUser(r)})
 }
 
-// ── Instance ──
+// ── Instance ──────────────────────────────────────────────────────────────────
 
+// instanceData is the view model for the instance detail page.
 type instanceData struct {
 	*engine.Instance
 	Flash       string
 	CurrentUser *auth.User
 }
 
+// instanceDetail renders the detail view for a single workflow instance.
 func (h *Handler) instanceDetail(w http.ResponseWriter, r *http.Request) {
 	inst, ok := h.store.Instance(r.PathValue("id"))
 	if !ok {
@@ -546,6 +582,8 @@ func (h *Handler) instanceDetail(w http.ResponseWriter, r *http.Request) {
 	h.render(w, r, "instance.html", instanceData{inst, getFlash(w, r), h.currentUser(r)})
 }
 
+// createInstance handles the POST form that creates a new workflow instance.
+// Any var_ prefixed form fields are applied as variable substitutions.
 func (h *Handler) createInstance(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	wfName := r.FormValue("workflow")
@@ -558,7 +596,7 @@ func (h *Handler) createInstance(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	// apply any $VAR substitutions from form
+	// collect and apply any $VAR substitutions provided in the form
 	vars := map[string]string{}
 	for key, vals := range r.Form {
 		if strings.HasPrefix(key, "var_") && len(vals) > 0 && vals[0] != "" {
@@ -571,6 +609,7 @@ func (h *Handler) createInstance(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
+// editInstance handles the POST form that updates an instance's title, priority, and labels.
 func (h *Handler) editInstance(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	r.ParseForm()
@@ -582,6 +621,8 @@ func (h *Handler) editInstance(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/instance/"+id, http.StatusSeeOther)
 }
 
+// advanceStep handles the POST request to complete a ready step.
+// Checks that the current user is permitted to act on the step before delegating to the store.
 func (h *Handler) advanceStep(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	r.ParseForm()
@@ -601,6 +642,7 @@ func (h *Handler) advanceStep(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/instance/"+id, http.StatusSeeOther)
 }
 
+// answerAsk handles the POST request to resolve an ask step's routing decision.
 func (h *Handler) answerAsk(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	r.ParseForm()
@@ -621,6 +663,7 @@ func (h *Handler) answerAsk(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/instance/"+id, http.StatusSeeOther)
 }
 
+// cloneInstance creates a copy of an existing instance and redirects to it.
 func (h *Handler) cloneInstance(w http.ResponseWriter, r *http.Request) {
 	inst, err := h.store.CloneInstance(r.PathValue("id"))
 	if err != nil {
@@ -630,6 +673,7 @@ func (h *Handler) cloneInstance(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/instance/"+inst.ID, http.StatusSeeOther)
 }
 
+// addComment appends a top-level comment to an instance.
 func (h *Handler) addComment(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	r.ParseForm()
@@ -642,11 +686,13 @@ func (h *Handler) addComment(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/instance/"+id, http.StatusSeeOther)
 }
 
+// deleteInstance permanently removes an instance and redirects to the board.
 func (h *Handler) deleteInstance(w http.ResponseWriter, r *http.Request) {
 	h.store.DeleteInstance(r.PathValue("id"))
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
+// archiveInstance marks an instance as archived and redirects to the board.
 func (h *Handler) archiveInstance(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if err := h.store.ArchiveInstance(id); err != nil {
@@ -656,6 +702,7 @@ func (h *Handler) archiveInstance(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
+// toggleListItem flips the checked state of a single checklist item.
 func (h *Handler) toggleListItem(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	r.ParseForm()
@@ -666,6 +713,7 @@ func (h *Handler) toggleListItem(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/instance/"+id, http.StatusSeeOther)
 }
 
+// addListItem appends a user-created checklist item to a step.
 func (h *Handler) addListItem(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	r.ParseForm()
@@ -678,6 +726,7 @@ func (h *Handler) addListItem(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/instance/"+id, http.StatusSeeOther)
 }
 
+// checkAllListItems marks every checklist item in a step as checked.
 func (h *Handler) checkAllListItems(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	r.ParseForm()
@@ -685,6 +734,7 @@ func (h *Handler) checkAllListItems(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/instance/"+id, http.StatusSeeOther)
 }
 
+// reorder updates the drag-and-drop position of instances on the board.
 func (h *Handler) reorder(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	ids := r.Form["ids[]"]
@@ -695,8 +745,9 @@ func (h *Handler) reorder(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// ── Gate approval ──
+// ── Gate approval ─────────────────────────────────────────────────────────────
 
+// approvalData is the view model for the external approval page.
 type approvalData struct {
 	Token    string
 	Step     *engine.StepState
@@ -705,6 +756,8 @@ type approvalData struct {
 	Error    string
 }
 
+// apiWorkflows returns a JSON list of all available workflow definitions.
+// Used by the builder UI to populate the workflow selector.
 func (h *Handler) apiWorkflows(w http.ResponseWriter, r *http.Request) {
 	type workflowInfo struct {
 		Name     string   `json:"name"`
@@ -726,6 +779,8 @@ func (h *Handler) apiWorkflows(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(list)
 }
 
+// approvalPage renders the external approval page for a gate step.
+// No authentication is required; the token in the URL path is the credential.
 func (h *Handler) approvalPage(w http.ResponseWriter, r *http.Request) {
 	token := r.PathValue("token")
 	inst, step := h.store.FindByToken(token)
@@ -740,6 +795,7 @@ func (h *Handler) approvalPage(w http.ResponseWriter, r *http.Request) {
 	h.render(w, r, "approve.html", approvalData{Token: token, Step: step, Instance: inst})
 }
 
+// approvalSubmit processes the approval form submission and redeems the gate token.
 func (h *Handler) approvalSubmit(w http.ResponseWriter, r *http.Request) {
 	token := r.PathValue("token")
 	r.ParseForm()
@@ -752,20 +808,23 @@ func (h *Handler) approvalSubmit(w http.ResponseWriter, r *http.Request) {
 	h.render(w, r, "approve.html", approvalData{Token: token, Done: true, Step: step, Instance: inst})
 }
 
-// ── Admin ──
+// ── Admin ─────────────────────────────────────────────────────────────────────
 
+// adminData is the view model for the user administration page.
 type adminData struct {
 	Users       []*auth.User
 	Flash       string
 	CurrentUser *auth.User
 }
 
+// adminUsers renders the user administration list.
 func (h *Handler) adminUsers(w http.ResponseWriter, r *http.Request) {
 	users := h.users.List()
 	sort.Slice(users, func(i, j int) bool { return users[i].CreatedAt.Before(users[j].CreatedAt) })
 	h.render(w, r, "admin.html", adminData{Users: users, Flash: getFlash(w, r), CurrentUser: h.currentUser(r)})
 }
 
+// adminCreateUser handles the form submission to create a new user.
 func (h *Handler) adminCreateUser(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	email := strings.TrimSpace(r.FormValue("email"))
@@ -778,11 +837,12 @@ func (h *Handler) adminCreateUser(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
 }
 
+// adminEditUser handles the form submission to update an existing user's profile.
 func (h *Handler) adminEditUser(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	id := r.PathValue("id")
 	active := r.FormValue("active") == "1"
-	// parse app_roles: comma-separated string from hidden input
+	// parse comma-separated app_roles from a hidden form input
 	var appRoles []string
 	for _, rr := range strings.Split(r.FormValue("app_roles"), ",") {
 		rr = strings.TrimSpace(strings.ToLower(rr))
@@ -797,6 +857,8 @@ func (h *Handler) adminEditUser(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
 }
 
+// adminDeleteUser permanently deletes a user account.
+// Prevents an admin from deleting their own account.
 func (h *Handler) adminDeleteUser(w http.ResponseWriter, r *http.Request) {
 	cu := h.currentUser(r)
 	id := r.PathValue("id")
@@ -809,6 +871,7 @@ func (h *Handler) adminDeleteUser(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
 }
 
+// adminResetPassword sets a new password for a user account.
 func (h *Handler) adminResetPassword(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	id := r.PathValue("id")
@@ -824,8 +887,9 @@ func (h *Handler) adminResetPassword(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
 }
 
-// ── Helpers ──
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
+// flashError sets a short-lived error cookie and redirects back to the referring page.
 func flashError(w http.ResponseWriter, r *http.Request, msg string) {
 	http.SetCookie(w, &http.Cookie{Name: "flash_error", Value: msg, Path: "/", MaxAge: 10})
 	ref := r.Header.Get("Referer")
@@ -835,6 +899,8 @@ func flashError(w http.ResponseWriter, r *http.Request, msg string) {
 	http.Redirect(w, r, ref, http.StatusSeeOther)
 }
 
+// getFlash reads and immediately clears the flash error cookie.
+// Returns the message string, or "" if no flash cookie was set.
 func getFlash(w http.ResponseWriter, r *http.Request) string {
 	c, err := r.Cookie("flash_error")
 	if err != nil {
@@ -844,6 +910,8 @@ func getFlash(w http.ResponseWriter, r *http.Request) string {
 	return c.Value
 }
 
+// render executes a named template into a buffer and writes it to the response.
+// Uses a buffer to avoid sending a partial response on template errors.
 func (h *Handler) render(w http.ResponseWriter, r *http.Request, name string, data any) {
 	var buf strings.Builder
 	if err := h.templates.ExecuteTemplate(&buf, name, data); err != nil {
@@ -854,11 +922,13 @@ func (h *Handler) render(w http.ResponseWriter, r *http.Request, name string, da
 	w.Write([]byte(buf.String()))
 }
 
+// renderError renders the error page template with an HTTP status code.
 func (h *Handler) renderError(w http.ResponseWriter, r *http.Request, msg string, code int) {
 	w.WriteHeader(code)
 	h.render(w, r, "error.html", map[string]interface{}{"Message": msg, "Code": code, "CurrentUser": h.currentUser(r)})
 }
 
+// containsStr reports whether s is present in slice.
 func containsStr(slice []string, s string) bool {
 	for _, v := range slice {
 		if v == s {
@@ -868,6 +938,7 @@ func containsStr(slice []string, s string) bool {
 	return false
 }
 
+// hasAnyLabel reports whether the instance labels intersect with the filter set.
 func hasAnyLabel(labels []string, filters []string) bool {
 	for _, f := range filters {
 		for _, l := range labels {
@@ -879,6 +950,10 @@ func hasAnyLabel(labels []string, filters []string) bool {
 	return false
 }
 
+// matchDueFilter returns true if the instance matches the given due-date filter:
+// "overdue" — has at least one overdue step
+// "today"   — has a step due before end of today
+// "7d"      — has a step due within the next 7 days
 func matchDueFilter(inst *engine.Instance, filter string, now time.Time) bool {
 	switch filter {
 	case "overdue":
@@ -905,6 +980,8 @@ func matchDueFilter(inst *engine.Instance, filter string, now time.Time) bool {
 	return true
 }
 
+// matchCreatedFilter returns true if the instance was created within the given window:
+// "today" — created today, "7d" — last 7 days, "30d" — last 30 days.
 func matchCreatedFilter(inst *engine.Instance, filter string, now time.Time) bool {
 	switch filter {
 	case "today":
@@ -918,6 +995,7 @@ func matchCreatedFilter(inst *engine.Instance, filter string, now time.Time) boo
 	return true
 }
 
+// priorityVal maps a priority string to a numeric sort key (high=3, medium=2, low=1).
 func priorityVal(p string) int {
 	switch p {
 	case "high":
@@ -931,8 +1009,8 @@ func priorityVal(p string) int {
 }
 
 // matchAssignFilter returns true if the instance has at least one active step
-// assigned to the given user. filter=="me" matches the current user's username,
-// "user:<name>", email, or any of the user's app_roles via "role:<rolename>".
+// whose assign field matches the given filter.
+// filter=="me" matches the current user by name, email, or app_role.
 func matchAssignFilter(inst *engine.Instance, filter string, u *auth.User) bool {
 	for _, sec := range inst.Sections {
 		for _, s := range sec.Steps {
@@ -946,7 +1024,6 @@ func matchAssignFilter(inst *engine.Instance, filter string, u *auth.User) bool 
 				if s.Assign == "user:"+u.Name || s.Assign == "user:"+u.Email || s.Assign == u.Name || s.Assign == u.Email {
 					return true
 				}
-				// match via app_roles: step assign="role:hr" and user has "hr" in AppRoles
 				if strings.HasPrefix(s.Assign, "role:") {
 					roleName := strings.TrimPrefix(s.Assign, "role:")
 					if slices.Contains(u.AppRoles, roleName) {
@@ -961,6 +1038,7 @@ func matchAssignFilter(inst *engine.Instance, filter string, u *auth.User) bool 
 	return false
 }
 
+// hasLabel reports whether the given label (lowercased) is present in labels.
 func hasLabel(labels []string, filter string) bool {
 	for _, l := range labels {
 		if strings.ToLower(l) == filter {
@@ -970,9 +1048,9 @@ func hasLabel(labels []string, filter string) bool {
 	return false
 }
 
-// userCanDoStep checks if a user is allowed to act on a step.
-// Admins and unassigned steps are always allowed. Otherwise the user must match
-// the step's assign field (by name, email, or app role).
+// userCanDoStep returns true if the user may act on the given step.
+// Admins and unassigned steps are always permitted.
+// Otherwise the user must match the assign expression by name, email, or app_role.
 func userCanDoStep(u *auth.User, s *engine.StepState) bool {
 	if u == nil || !u.CanWrite() {
 		return false
@@ -990,8 +1068,9 @@ func userCanDoStep(u *auth.User, s *engine.StepState) bool {
 	return false
 }
 
-// ── Profile ──
+// ── Profile ───────────────────────────────────────────────────────────────────
 
+// profilePage renders the current user's profile page.
 func (h *Handler) profilePage(w http.ResponseWriter, r *http.Request) {
 	u := h.currentUser(r)
 	h.render(w, r, "profile.html", map[string]any{
@@ -1000,6 +1079,8 @@ func (h *Handler) profilePage(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// profileSave handles the profile edit form, updating the user's display name
+// and optionally their password.
 func (h *Handler) profileSave(w http.ResponseWriter, r *http.Request) {
 	u := h.currentUser(r)
 	r.ParseForm()

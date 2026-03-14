@@ -15,6 +15,9 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
+// Store is the central data layer. It holds workflow definitions (loaded from .workflow files)
+// and active instances (persisted as JSON files in dataDir). All public methods are safe
+// for concurrent use.
 type Store struct {
 	mu          sync.RWMutex
 	dataDir     string
@@ -22,10 +25,14 @@ type Store struct {
 	definitions map[string]*dsl.Workflow
 	instances   map[string]*engine.Instance
 
+	// optional mailer and email resolver; nil = log-only notifications
 	mailer        engine.Mailer
 	emailResolver engine.EmailResolver
 }
 
+// New creates a Store, loads all workflow definitions and persisted instances,
+// then starts a background file-watcher for hot-reloading workflows and a
+// scheduler goroutine for time-based step activation.
 func New(workflowDir, dataDir string) (*Store, error) {
 	log.Printf("[store] starting — workflowDir=%s dataDir=%s", workflowDir, dataDir)
 	s := &Store{
@@ -48,18 +55,21 @@ func New(workflowDir, dataDir string) (*Store, error) {
 }
 
 // SetMailer configures the mailer and email resolver used for notifications.
+// Call this once at startup after the Store is created.
 func (s *Store) SetMailer(m engine.Mailer, r engine.EmailResolver) {
 	s.mailer = m
 	s.emailResolver = r
 }
 
-// inject sets runtime-only fields on an instance before engine calls.
+// inject sets the runtime-only Mailer and EmailResolver fields on an instance
+// before any engine method is called. Instances loaded from disk don't carry
+// these fields, so they must be re-injected each time.
 func (s *Store) inject(inst *engine.Instance) {
 	inst.MailSender = s.mailer
 	inst.EmailResolver = s.emailResolver
 }
 
-// runScheduler ticks every minute and activates scheduled steps.
+// runScheduler ticks every minute and activates any scheduled steps whose time has arrived.
 func (s *Store) runScheduler() {
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
@@ -80,6 +90,9 @@ func (s *Store) runScheduler() {
 	}
 }
 
+// watchWorkflows monitors the workflow directory for file changes and hot-reloads
+// definitions when .workflow files are created, modified, or deleted.
+// A 300ms debounce prevents multiple rapid reloads on a single save.
 func (s *Store) watchWorkflows() {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
@@ -116,6 +129,9 @@ func (s *Store) watchWorkflows() {
 	}
 }
 
+// loadDefinitions parses all .workflow files in workflowDir and registers them.
+// Duplicate workflow names are suffixed with " -1", " -2", etc.
+// Files that fail to parse or contain dependency cycles are skipped with a warning.
 func (s *Store) loadDefinitions() error {
 	entries, err := os.ReadDir(s.workflowDir)
 	if err != nil {
@@ -138,6 +154,7 @@ func (s *Store) loadDefinitions() error {
 			log.Printf("[store] cycle detected in %s: %v (skipping)", e.Name(), err)
 			continue
 		}
+		// deduplicate names by appending a counter
 		origName := wf.Name
 		for i := 1; ; i++ {
 			if _, dup := s.definitions[wf.Name]; !dup {
@@ -154,6 +171,7 @@ func (s *Store) loadDefinitions() error {
 	return nil
 }
 
+// loadInstances reads all instance JSON files from dataDir into memory.
 func (s *Store) loadInstances() error {
 	entries, err := os.ReadDir(s.dataDir)
 	if err != nil {
@@ -177,6 +195,7 @@ func (s *Store) loadInstances() error {
 	return nil
 }
 
+// save serialises an instance to its JSON file in dataDir.
 func (s *Store) save(inst *engine.Instance) error {
 	data, err := json.MarshalIndent(inst, "", "  ")
 	if err != nil {
@@ -185,6 +204,7 @@ func (s *Store) save(inst *engine.Instance) error {
 	return os.WriteFile(filepath.Join(s.dataDir, inst.ID+".json"), data, 0644)
 }
 
+// Definitions returns all currently loaded workflow definitions.
 func (s *Store) Definitions() []*dsl.Workflow {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -195,6 +215,7 @@ func (s *Store) Definitions() []*dsl.Workflow {
 	return list
 }
 
+// AllLabels returns the deduplicated set of labels defined across all workflows.
 func (s *Store) AllLabels() []string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -211,6 +232,10 @@ func (s *Store) AllLabels() []string {
 	return out
 }
 
+// CreateInstance creates a new instance from the named workflow definition.
+// priority may be empty to use the workflow default.
+// Mailer and EmailResolver are set before the initial activation so that
+// notifications fire correctly for steps that are immediately ready.
 func (s *Store) CreateInstance(workflowName, title, priority string) (*engine.Instance, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -229,6 +254,8 @@ func (s *Store) CreateInstance(workflowName, title, priority string) (*engine.In
 	return inst, s.save(inst)
 }
 
+// CloneInstance creates a fresh copy of an existing instance using the same workflow definition.
+// The clone title gets " (copy)" appended.
 func (s *Store) CloneInstance(id string) (*engine.Instance, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -249,6 +276,7 @@ func (s *Store) CloneInstance(id string) (*engine.Instance, error) {
 	return inst, s.save(inst)
 }
 
+// Instances returns all non-archived instances.
 func (s *Store) Instances() []*engine.Instance {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -261,6 +289,7 @@ func (s *Store) Instances() []*engine.Instance {
 	return list
 }
 
+// ArchivedInstances returns all archived instances.
 func (s *Store) ArchivedInstances() []*engine.Instance {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -273,6 +302,7 @@ func (s *Store) ArchivedInstances() []*engine.Instance {
 	return list
 }
 
+// Instance returns a single instance by ID.
 func (s *Store) Instance(id string) (*engine.Instance, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -280,6 +310,8 @@ func (s *Store) Instance(id string) (*engine.Instance, bool) {
 	return inst, ok
 }
 
+// FindByToken returns the instance and step that hold the given gate token.
+// Returns nil, nil if no matching token exists.
 func (s *Store) FindByToken(token string) (*engine.Instance, *engine.StepState) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -291,6 +323,7 @@ func (s *Store) FindByToken(token string) (*engine.Instance, *engine.StepState) 
 	return nil, nil
 }
 
+// AdvanceStep completes a ready step in the given instance and persists the result.
 func (s *Store) AdvanceStep(id, stepName string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -305,6 +338,7 @@ func (s *Store) AdvanceStep(id, stepName string) error {
 	return s.save(inst)
 }
 
+// AnswerAsk resolves an ask step's routing decision and persists the result.
 func (s *Store) AnswerAsk(id, stepName string, chosenIdx int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -319,6 +353,8 @@ func (s *Store) AnswerAsk(id, stepName string, chosenIdx int) error {
 	return s.save(inst)
 }
 
+// RedeemGate validates an approval token and completes the corresponding gate step.
+// Returns the updated instance and step on success.
 func (s *Store) RedeemGate(token string, chosenIdx int) (*engine.Instance, *engine.StepState, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -341,6 +377,8 @@ func (s *Store) RedeemGate(token string, chosenIdx int) (*engine.Instance, *engi
 	return targetInst, step, s.save(targetInst)
 }
 
+// UpdateInstance updates the title, priority, and label set of an instance.
+// Empty strings for title or priority leave those fields unchanged.
 func (s *Store) UpdateInstance(id, title, priority, labels string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -367,6 +405,7 @@ func (s *Store) UpdateInstance(id, title, priority, labels string) error {
 	return s.save(inst)
 }
 
+// ToggleListItem flips the checked state of a checklist item and persists the result.
 func (s *Store) ToggleListItem(id, stepName, itemID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -380,6 +419,7 @@ func (s *Store) ToggleListItem(id, stepName, itemID string) error {
 	return s.save(inst)
 }
 
+// CheckAllListItems marks all checklist items in a step as checked and persists the result.
 func (s *Store) CheckAllListItems(id, stepName string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -391,6 +431,7 @@ func (s *Store) CheckAllListItems(id, stepName string) error {
 	return s.save(inst)
 }
 
+// AddListItem appends a dynamic checklist item to an active step and persists the result.
 func (s *Store) AddListItem(id, stepName, text string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -404,6 +445,7 @@ func (s *Store) AddListItem(id, stepName, text string) error {
 	return s.save(inst)
 }
 
+// AddStepComment appends a comment to a step and persists the result.
 func (s *Store) AddStepComment(id, stepName, text string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -417,6 +459,7 @@ func (s *Store) AddStepComment(id, stepName, text string) error {
 	return s.save(inst)
 }
 
+// AddComment appends a comment to the instance and persists the result.
 func (s *Store) AddComment(id, text string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -430,6 +473,7 @@ func (s *Store) AddComment(id, text string) error {
 	return s.save(inst)
 }
 
+// ApplyVars substitutes workflow variable placeholders in an instance and persists the result.
 func (s *Store) ApplyVars(id string, vars map[string]string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -441,6 +485,8 @@ func (s *Store) ApplyVars(id string, vars map[string]string) error {
 	return s.save(inst)
 }
 
+// ReorderInstances updates the position field of each instance according to the
+// provided ordered slice of IDs and persists each change.
 func (s *Store) ReorderInstances(ids []string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -456,6 +502,7 @@ func (s *Store) ReorderInstances(ids []string) error {
 	return nil
 }
 
+// ArchiveInstance marks an instance as archived and persists the result.
 func (s *Store) ArchiveInstance(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -469,6 +516,7 @@ func (s *Store) ArchiveInstance(id string) error {
 	return s.save(inst)
 }
 
+// DeleteInstance removes an instance from memory and deletes its JSON file from disk.
 func (s *Store) DeleteInstance(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
