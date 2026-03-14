@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -25,8 +26,10 @@ func init() {
 		b := make([]byte, 32)
 		rand.Read(b)
 		sessionSecret = b
+		log.Printf("[session] no SESSION_SECRET set — using ephemeral secret (sessions will not survive restarts)")
 	} else {
 		sessionSecret = []byte(secret)
+		log.Printf("[session] using SESSION_SECRET from environment")
 	}
 }
 
@@ -36,6 +39,7 @@ type sessionPayload struct {
 }
 
 func SetSession(w http.ResponseWriter, userID string) {
+	log.Printf("[session] set session for user %s", userID)
 	payload := sessionPayload{UserID: userID, ExpiresAt: time.Now().Add(cookieTTL)}
 	data, _ := json.Marshal(payload)
 	encoded := base64.RawURLEncoding.EncodeToString(data)
@@ -52,6 +56,7 @@ func SetSession(w http.ResponseWriter, userID string) {
 }
 
 func ClearSession(w http.ResponseWriter) {
+	log.Printf("[session] clearing session")
 	http.SetCookie(w, &http.Cookie{
 		Name:   cookieName,
 		Value:  "",
@@ -71,17 +76,21 @@ func GetSessionUserID(r *http.Request) (string, error) {
 	}
 	encoded, sig := parts[0], parts[1]
 	if sig != sign(encoded) {
+		log.Printf("[session] invalid session signature")
 		return "", fmt.Errorf("invalid session signature")
 	}
 	data, err := base64.RawURLEncoding.DecodeString(encoded)
 	if err != nil {
+		log.Printf("[session] invalid session encoding: %v", err)
 		return "", fmt.Errorf("invalid session encoding")
 	}
 	var p sessionPayload
 	if err := json.Unmarshal(data, &p); err != nil {
+		log.Printf("[session] invalid session data: %v", err)
 		return "", fmt.Errorf("invalid session data")
 	}
 	if time.Now().After(p.ExpiresAt) {
+		log.Printf("[session] session expired for user %s", p.UserID)
 		return "", fmt.Errorf("session expired")
 	}
 	return p.UserID, nil

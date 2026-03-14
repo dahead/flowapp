@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -32,15 +33,23 @@ func NewGraphMailer(tenantID, clientID, clientSecret, senderUPN string) *GraphMa
 }
 
 func (g *GraphMailer) Send(msg Message) error {
+	log.Printf("[mailer/graph] sending email — subject: %q to: %v", msg.Subject, msg.To)
 	token, err := g.getToken()
 	if err != nil {
+		log.Printf("[mailer/graph] failed to get token: %v", err)
 		return fmt.Errorf("get token: %w", err)
 	}
-	return g.sendMail(token, msg)
+	if err := g.sendMail(token, msg); err != nil {
+		log.Printf("[mailer/graph] send failed — subject: %q to: %v: %v", msg.Subject, msg.To, err)
+		return err
+	}
+	log.Printf("[mailer/graph] email sent successfully — subject: %q to: %v", msg.Subject, msg.To)
+	return nil
 }
 
 // getToken fetches an access token via client credentials grant.
 func (g *GraphMailer) getToken() (string, error) {
+	log.Printf("[mailer/graph] fetching OAuth2 token for tenant %s", g.TenantID)
 	url := fmt.Sprintf("https://login.microsoftonline.com/%s/oauth2/v2.0/token", g.TenantID)
 	body := fmt.Sprintf(
 		"grant_type=client_credentials&client_id=%s&client_secret=%s&scope=https://graph.microsoft.com/.default",
@@ -60,8 +69,10 @@ func (g *GraphMailer) getToken() (string, error) {
 		return "", err
 	}
 	if result.Error != "" {
+		log.Printf("[mailer/graph] token error: %s: %s", result.Error, result.Description)
 		return "", fmt.Errorf("%s: %s", result.Error, result.Description)
 	}
+	log.Printf("[mailer/graph] token acquired successfully")
 	return result.AccessToken, nil
 }
 

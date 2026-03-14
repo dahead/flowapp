@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"fmt"
+	"log"
 	"mime"
 	"mime/multipart"
 	"net/smtp"
@@ -27,6 +28,7 @@ func NewSMTPMailer(host string, port int, username, password string) *SMTPMailer
 }
 
 func (s *SMTPMailer) Send(msg Message) error {
+	log.Printf("[mailer/smtp] sending email — subject: %q to: %v", msg.Subject, msg.To)
 	var auth smtp.Auth
 	if s.Username != "" {
 		auth = smtp.PlainAuth("", s.Username, s.Password, s.Host)
@@ -34,12 +36,18 @@ func (s *SMTPMailer) Send(msg Message) error {
 
 	raw, err := buildMIME(msg)
 	if err != nil {
+		log.Printf("[mailer/smtp] build mime failed: %v", err)
 		return fmt.Errorf("build mime: %w", err)
 	}
 
 	addr := fmt.Sprintf("%s:%d", s.Host, s.Port)
 	all := append(msg.To, append(msg.CC, msg.BCC...)...)
-	return smtp.SendMail(addr, auth, msg.From, all, raw)
+	if err := smtp.SendMail(addr, auth, msg.From, all, raw); err != nil {
+		log.Printf("[mailer/smtp] send failed to %v via %s: %v", all, addr, err)
+		return err
+	}
+	log.Printf("[mailer/smtp] email sent successfully — subject: %q to: %v", msg.Subject, msg.To)
+	return nil
 }
 
 // buildMIME constructs the full MIME message as a byte slice.

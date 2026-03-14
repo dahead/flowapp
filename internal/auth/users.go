@@ -5,11 +5,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"golang.org/x/crypto/bcrypt"
+	"log"
 	"os"
 	"sync"
 	"time"
-
-	"golang.org/x/crypto/bcrypt"
 )
 
 type Role string
@@ -44,8 +44,12 @@ func NewUserStore(path string) (*UserStore, error) {
 	s := &UserStore{path: path, users: map[string]*User{}, byEmail: map[string]*User{}}
 	if _, err := os.Stat(path); err == nil {
 		if err := s.load(); err != nil {
+			log.Printf("[auth] failed to load user store from %s: %v", path, err)
 			return nil, err
 		}
+		log.Printf("[auth] loaded %d user(s) from %s", len(s.users), path)
+	} else {
+		log.Printf("[auth] no user store found at %s — starting empty", path)
 	}
 	return s, nil
 }
@@ -88,10 +92,12 @@ func (s *UserStore) Create(email, name, password string, role Role) (*User, erro
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, exists := s.byEmail[email]; exists {
+		log.Printf("[auth] create user failed — email already registered: %s", email)
 		return nil, fmt.Errorf("E-Mail bereits registriert")
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
+		log.Printf("[auth] create user failed — bcrypt error for %s: %v", email, err)
 		return nil, err
 	}
 	u := &User{
@@ -100,7 +106,12 @@ func (s *UserStore) Create(email, name, password string, role Role) (*User, erro
 	}
 	s.users[u.ID] = u
 	s.byEmail[u.Email] = u
-	return u, s.save()
+	if err := s.save(); err != nil {
+		log.Printf("[auth] create user failed — save error for %s: %v", email, err)
+		return nil, err
+	}
+	log.Printf("[auth] created user %s (%s) role=%s", u.ID, email, role)
+	return u, nil
 }
 
 func (s *UserStore) Authenticate(email, password string) (*User, error) {
@@ -108,11 +119,14 @@ func (s *UserStore) Authenticate(email, password string) (*User, error) {
 	u := s.byEmail[email]
 	s.mu.RUnlock()
 	if u == nil || !u.Active {
+		log.Printf("[auth] authentication failed — unknown or inactive user: %s", email)
 		return nil, fmt.Errorf("Ungültige Zugangsdaten")
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)); err != nil {
+		log.Printf("[auth] authentication failed — wrong password for user: %s", email)
 		return nil, fmt.Errorf("Ungültige Zugangsdaten")
 	}
+	log.Printf("[auth] authenticated user %s (%s)", u.ID, email)
 	return u, nil
 }
 
@@ -138,10 +152,12 @@ func (s *UserStore) Update(id, name, email string, role Role, active bool) error
 	defer s.mu.Unlock()
 	u, ok := s.users[id]
 	if !ok {
+		log.Printf("[auth] update user failed — not found: %s", id)
 		return fmt.Errorf("user not found")
 	}
 	if email != u.Email {
 		if _, exists := s.byEmail[email]; exists {
+			log.Printf("[auth] update user failed — email already taken: %s", email)
 			return fmt.Errorf("E-Mail bereits vergeben")
 		}
 		delete(s.byEmail, u.Email)
@@ -151,7 +167,12 @@ func (s *UserStore) Update(id, name, email string, role Role, active bool) error
 	u.Name = name
 	u.Role = role
 	u.Active = active
-	return s.save()
+	if err := s.save(); err != nil {
+		log.Printf("[auth] update user failed — save error for %s: %v", id, err)
+		return err
+	}
+	log.Printf("[auth] updated user %s (%s) role=%s active=%v", id, email, role, active)
+	return nil
 }
 
 func (s *UserStore) ResetPassword(id, newPassword string) error {
@@ -159,14 +180,21 @@ func (s *UserStore) ResetPassword(id, newPassword string) error {
 	defer s.mu.Unlock()
 	u, ok := s.users[id]
 	if !ok {
+		log.Printf("[auth] reset password failed — user not found: %s", id)
 		return fmt.Errorf("user not found")
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
 	if err != nil {
+		log.Printf("[auth] reset password failed — bcrypt error for %s: %v", id, err)
 		return err
 	}
 	u.PasswordHash = string(hash)
-	return s.save()
+	if err := s.save(); err != nil {
+		log.Printf("[auth] reset password failed — save error for %s: %v", id, err)
+		return err
+	}
+	log.Printf("[auth] password reset for user %s (%s)", id, u.Email)
+	return nil
 }
 
 func (s *UserStore) Delete(id string) error {
@@ -174,11 +202,17 @@ func (s *UserStore) Delete(id string) error {
 	defer s.mu.Unlock()
 	u, ok := s.users[id]
 	if !ok {
+		log.Printf("[auth] delete user failed — not found: %s", id)
 		return fmt.Errorf("user not found")
 	}
 	delete(s.byEmail, u.Email)
 	delete(s.users, id)
-	return s.save()
+	if err := s.save(); err != nil {
+		log.Printf("[auth] delete user failed — save error for %s: %v", id, err)
+		return err
+	}
+	log.Printf("[auth] deleted user %s (%s)", id, u.Email)
+	return nil
 }
 
 func newID() string {
