@@ -4,6 +4,7 @@
 <head>
 <meta charset="UTF-8">
 <link rel="stylesheet" href="/static/app.css">
+<link rel="stylesheet" href="/static/common.css">
 <title>Archive — FlowApp</title>
 <script src="/static/theme-init.js"></script>
 <link rel="stylesheet" href="/static/archive.css">
@@ -16,9 +17,13 @@
   <button class="theme-btn" onclick="document.documentElement.setAttribute('data-theme',document.documentElement.getAttribute('data-theme')==='dark'?'light':'dark');localStorage.setItem('theme',document.documentElement.getAttribute('data-theme'))">◐</button>
 </header>
 <div class="content">
-  <div class="search-bar">
-    <input type="text" id="searchInput" placeholder="🔍 Search archived workflows…" value="{{.FilterQ}}"
-      onkeydown="if(event.key==='Enter')location='?q='+encodeURIComponent(this.value)">
+  <div class="filter-bar">
+    <input type="text" class="filter-search" id="searchInput"
+      placeholder="🔍 Search archived workflows…"
+      value="{{.FilterQ}}">
+    {{if .FilterQ}}
+    <a href="/archive" class="chip-clear">✕ clear</a>
+    {{end}}
   </div>
   {{if eq (len .Instances) 0}}
   <div class="empty">No completed workflows yet.</div>
@@ -40,6 +45,18 @@
   {{end}}
   {{end}}
 </div>
+<script>
+var _st;
+document.getElementById('searchInput').addEventListener('input', function() {
+  clearTimeout(_st);
+  var v = this.value.trim();
+  _st = setTimeout(function() { location = '/archive' + (v ? '?q=' + encodeURIComponent(v) : ''); }, 600);
+});
+document.getElementById('searchInput').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') { clearTimeout(_st); location = '/archive' + (this.value.trim() ? '?q=' + encodeURIComponent(this.value.trim()) : ''); }
+  if (e.key === 'Escape') { clearTimeout(_st); this.value = ''; location = '/archive'; }
+});
+</script>
 </body>
 </html>
 {{end}}

@@ -4,6 +4,7 @@
 <head>
 <meta charset="UTF-8">
 <link rel="stylesheet" href="/static/app.css">
+<link rel="stylesheet" href="/static/common.css">
 <title>FlowApp</title>
 <script src="/static/theme-init.js"></script>
 <link rel="stylesheet" href="/static/board.css">
@@ -117,6 +118,7 @@
     <option value="created"{{if eq .FilterSort "created"}} selected{{end}}>📅 Created</option>
   </select>
   <button class="filter-cli-btn" id="cliBtnOpen" onclick="openCLI()">⌨ CLI</button>
+  <button class="filter-cli-btn" id="helpBtn" onclick="openHelp()" title="Keyboard shortcuts">?</button>
 </div>
 
 <!-- CLI overlay -->
@@ -170,21 +172,6 @@
   </div><!-- /col-body -->
   </div>
   {{end}}
-</div>
-
-
-
-<div class="shortcuts-overlay" id="shortcutsOverlay" onclick="if(event.target===this)this.classList.remove('open')">
-  <div class="shortcuts-box">
-    <h3>⌨ Keyboard Shortcuts</h3>
-    <div class="sc-row"><span>Search</span><span class="sc-key">/</span></div>
-    <div class="sc-row"><span>New instance</span><span class="sc-key">N</span></div>
-    <div class="sc-row"><span>CLI Search</span><span class="sc-key">⌨ CLI button</span></div>
-    <div class="sc-row"><span>Shortcuts</span><span class="sc-key">?</span></div>
-    <div class="sc-row"><span>Builder</span><span class="sc-key">B</span></div>
-    <div class="sc-row"><span>Archive</span><span class="sc-key">A</span></div>
-    <div class="sc-row"><span>Close</span><span class="sc-key">Esc</span></div>
-  </div>
 </div>
 
 <script>
@@ -474,17 +461,10 @@ document.addEventListener('keydown', function(e) {
     if (inp) { inp.focus(); inp.select(); }
   }
   if (e.key === '?' && !e.shiftKey) {
-    document.getElementById('shortcutsOverlay').classList.toggle('open');
+    openHelp();
   }
-  if (e.key === 'Escape') {
-    document.getElementById('shortcutsOverlay').classList.remove('open');
-    closeCLI && closeCLI();
-  }
-  if (e.key === 'b' || e.key === 'B') {
-    if (!document.getElementById('cliOverlay').classList.contains('open'))
-      location = '/builder';
-  }
-  if (e.key === 'a' || e.key === 'A') location = '/archive';
+  if (e.key === 'Escape') { closeCLI && closeCLI(); closeHelp(); }
+if (e.key === 'a' || e.key === 'A') location = '/archive';
 });
 
 // workflow vars — read from hidden data element (no template literals needed)
@@ -512,15 +492,31 @@ function checkVarsRedirect(form) {
 }
 
 const _colCollapsed = {};
+
+function updateBoardGrid() {
+  const cols = document.querySelectorAll('.board > .column');
+  const open = [...cols].filter(function(c) { return !c.classList.contains('collapsed'); }).length;
+  const total = cols.length;
+  var template = '';
+  cols.forEach(function(col) {
+    template += col.classList.contains('collapsed') ? '40px ' : '1fr ';
+  });
+  document.querySelector('.board').style.gridTemplateColumns = template.trim();
+}
+
 function toggleCol(idx) {
-  const body  = document.getElementById('colBody'  + idx);
-  const arrow = document.getElementById('colArrow' + idx);
-  if (!body) return;
+  const body   = document.getElementById('colBody'  + idx);
+  const arrow  = document.getElementById('colArrow' + idx);
+  const column = body ? body.closest('.column') : null;
+  if (!body || !column) return;
   _colCollapsed[idx] = !_colCollapsed[idx];
   body.classList.toggle('collapsed', _colCollapsed[idx]);
+  column.classList.toggle('collapsed', _colCollapsed[idx]);
   arrow.textContent = _colCollapsed[idx] ? '▶' : '▼';
+  updateBoardGrid();
   try { localStorage.setItem('colCollapsed', JSON.stringify(_colCollapsed)); } catch(e) {}
 }
+
 // restore collapse state
 (function() {
   try {
@@ -529,15 +525,37 @@ function toggleCol(idx) {
       if (saved[k]) {
         const body  = document.getElementById('colBody'  + k);
         const arrow = document.getElementById('colArrow' + k);
+        const col   = body ? body.closest('.column') : null;
         if (body)  { body.classList.add('collapsed'); _colCollapsed[k] = true; }
         if (arrow) { arrow.textContent = '▶'; }
+        if (col)   { col.classList.add('collapsed'); }
       }
     });
+    updateBoardGrid();
   } catch(e) {}
 })();
 
 // toggleTheme() loaded from /static/theme-toggle.js
+
+function openHelp()  { document.getElementById('helpOverlay').classList.add('open'); }
+function closeHelp() { document.getElementById('helpOverlay').classList.remove('open'); }
 </script>
+
+<div class="cli-overlay" id="helpOverlay" onclick="if(event.target===this)closeHelp()">
+  <div class="cli-box" style="max-width:320px;">
+    <div class="cli-input-row" style="border-bottom:1px solid var(--border2);">
+      <span style="font-weight:700;font-size:0.9rem;">Keyboard Shortcuts</span>
+      <button onclick="closeHelp()" style="margin-left:auto;background:none;border:none;color:var(--text3);cursor:pointer;font-size:1.1rem;">✕</button>
+    </div>
+    <div style="padding:0.75rem 1.1rem;display:flex;flex-direction:column;gap:0.4rem;">
+      <div style="display:flex;justify-content:space-between;font-size:0.85rem;"><span>Focus search</span><kbd>/</kbd></div>
+      <div style="display:flex;justify-content:space-between;font-size:0.85rem;"><span>New instance</span><kbd>N</kbd></div>
+      <div style="display:flex;justify-content:space-between;font-size:0.85rem;"><span>CLI search</span><kbd>⌨ CLI</kbd></div>
+      <div style="display:flex;justify-content:space-between;font-size:0.85rem;"><span>Close / Cancel</span><kbd>Esc</kbd></div>
+    </div>
+  </div>
+</div>
+<script src="/static/theme-toggle.js"></script>
 </body>
 </html>
 {{end}}

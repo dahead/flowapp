@@ -97,6 +97,10 @@ func (s *Store) loadDefinitions() error {
 			log.Printf("parse error in %s: %v (skipping)", e.Name(), err)
 			continue
 		}
+		if err := dsl.DetectCycles(wf); err != nil {
+			log.Printf("[store] cycle detected in %s: %v (skipping)", e.Name(), err)
+			continue
+		}
 		origName := wf.Name
 		for i := 1; ; i++ {
 			if _, dup := s.definitions[wf.Name]; !dup {
@@ -213,7 +217,21 @@ func (s *Store) Instances() []*engine.Instance {
 	defer s.mu.RUnlock()
 	var list []*engine.Instance
 	for _, inst := range s.instances {
-		list = append(list, inst)
+		if !inst.Archived {
+			list = append(list, inst)
+		}
+	}
+	return list
+}
+
+func (s *Store) ArchivedInstances() []*engine.Instance {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var list []*engine.Instance
+	for _, inst := range s.instances {
+		if inst.Archived {
+			list = append(list, inst)
+		}
 	}
 	return list
 }
@@ -346,6 +364,19 @@ func (s *Store) AddListItem(id, stepName, text string) error {
 	return s.save(inst)
 }
 
+func (s *Store) AddStepComment(id, stepName, text string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	inst, ok := s.instances[id]
+	if !ok {
+		return fmt.Errorf("instance not found")
+	}
+	if err := inst.AddStepComment(stepName, text); err != nil {
+		return err
+	}
+	return s.save(inst)
+}
+
 func (s *Store) AddComment(id, text string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -356,6 +387,17 @@ func (s *Store) AddComment(id, text string) error {
 	if err := inst.AddComment(text); err != nil {
 		return err
 	}
+	return s.save(inst)
+}
+
+func (s *Store) ApplyVars(id string, vars map[string]string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	inst, ok := s.instances[id]
+	if !ok {
+		return fmt.Errorf("instance not found")
+	}
+	inst.ApplyVars(vars)
 	return s.save(inst)
 }
 
@@ -372,6 +414,19 @@ func (s *Store) ReorderInstances(ids []string) error {
 	}
 	log.Printf("[store] reordered %d instances", len(ids))
 	return nil
+}
+
+func (s *Store) ArchiveInstance(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	inst, ok := s.instances[id]
+	if !ok {
+		return fmt.Errorf("instance not found")
+	}
+	inst.Archived = true
+	inst.UpdatedAt = time.Now()
+	log.Printf("[store] archived instance %s ('%s')", id, inst.Title)
+	return s.save(inst)
 }
 
 func (s *Store) DeleteInstance(id string) error {
