@@ -58,14 +58,16 @@
 
   <!-- Label chips -->
   {{if .AllLabels}}
-  <div class="filter-group">
-    <span class="filter-label">Labels</span>
+  <div class="filter-group" style="flex-wrap:nowrap;">
+    <span class="filter-label" onclick="toggleLabelFilter()" style="cursor:pointer;user-select:none;white-space:nowrap;">Labels <span id="labelToggleIcon">▾</span></span>
+    <div id="labelChips" style="display:flex;flex-wrap:nowrap;gap:0.3rem;overflow:hidden;">
     {{range .AllLabels}}
     <a class="chip label-chip{{if hasLabel $ .}} active{{end}}"
        onclick="toggleFilter('label','{{.}}');return false;" href="#">
       {{.}}{{if hasLabel $ .}}<span class="chip-x" onclick="removeFilter('label','{{.}}');return false;">✕</span>{{end}}
     </a>
     {{end}}
+    </div>
   </div>
   <div class="filter-sep"></div>
   {{end}}
@@ -177,11 +179,10 @@
 </div>
 
 <script>
-// ── Board Drag & Drop (same approach as builder: pointer-events + getBoundingClientRect) ──
-let dragging = null; // { cardEl, id, ghost }
-let dropTarget = null; // zone dataset.after value
+// ── Board Drag & Drop ──
+let dragging = null;
+let dropTarget = null;
 
-// attach mousedown to each card
 function initCards() {
   document.querySelectorAll('.card[data-id]').forEach(card => {
     card.addEventListener('mousedown', e => {
@@ -196,7 +197,6 @@ function initCards() {
       card.classList.add('dragging');
       dragging = { cardEl: card, id: card.dataset.id, ghost };
     });
-    // click navigation — only if no drag happened
     card.addEventListener('click', e => {
       if (dragging) return;
       location = '/instance/' + card.dataset.id;
@@ -210,7 +210,6 @@ document.addEventListener('mousemove', e => {
   const w = parseFloat(g.style.width);
   g.style.left = (e.clientX - w/2) + 'px';
   g.style.top  = (e.clientY - 20)  + 'px';
-  // hit-test drop zones via getBoundingClientRect
   dropTarget = null;
   document.querySelectorAll('.card-drop-zone').forEach(z => {
     const r = z.getBoundingClientRect();
@@ -248,8 +247,6 @@ function commitDrop(zone) {
   const col = zone.closest('.column');
   const dragId = dragging.id;
   const afterId = zone.dataset.after;
-
-  // reorder in DOM
   if (!afterId || afterId === '__start__') {
     const firstZone = col.querySelector('.card-drop-zone');
     firstZone.after(dragging.cardEl);
@@ -257,17 +254,12 @@ function commitDrop(zone) {
     const afterCard = col.querySelector('.card[data-id="' + afterId + '"]');
     if (afterCard) afterCard.after(dragging.cardEl);
   }
-
-  // build ordered id list for this column
   const colCards = [...col.querySelectorAll('.card[data-id]')];
   const colIds = colCards.map(c => c.dataset.id);
-
-  // other columns unchanged
   const thisSet = new Set(colIds);
   const otherIds = [...document.querySelectorAll('.card[data-id]')]
     .filter(c => !thisSet.has(c.dataset.id))
     .map(c => c.dataset.id);
-
   const allIds = [...colIds, ...otherIds];
   fetch('/reorder', { method:'POST', body: new URLSearchParams(allIds.map(id => ['ids[]', id])) });
 }
@@ -295,17 +287,39 @@ function toggleFilter(key, val) {
 }
 
 function removeFilter(key, val) {
-  toggleFilter(key, val); // same logic
+  toggleFilter(key, val);
 }
 
 function setSingle(key, val) {
   const p = getParams();
-  if (!val || p.get(key) === val) p.delete(key); // toggle off if same value
+  if (!val || p.get(key) === val) p.delete(key);
   else p.set(key, val);
   window.location = '/?' + p.toString();
 }
 
-// search: only navigate on Enter or after 800ms idle (not every keystroke)
+// ── Label filter collapse ──
+function toggleLabelFilter() {
+  const chips = document.getElementById('labelChips');
+  const icon  = document.getElementById('labelToggleIcon');
+  const collapsed = chips.style.maxWidth === '0px';
+  chips.style.maxWidth  = collapsed ? '' : '0px';
+  chips.style.opacity   = collapsed ? '1' : '0';
+  chips.style.pointerEvents = collapsed ? '' : 'none';
+  icon.textContent = collapsed ? '▾' : '▸';
+  try { localStorage.setItem('labelFilterCollapsed', collapsed ? '0' : '1'); } catch(e) {}
+}
+(function() {
+  try {
+    if (localStorage.getItem('labelFilterCollapsed') === '1') {
+      const chips = document.getElementById('labelChips');
+      const icon  = document.getElementById('labelToggleIcon');
+      if (chips) { chips.style.maxWidth = '0px'; chips.style.opacity = '0'; chips.style.pointerEvents = 'none'; }
+      if (icon)  { icon.textContent = '▸'; }
+    }
+  } catch(e) {}
+})();
+
+// search
 let _searchTimer;
 document.getElementById('searchInput').addEventListener('input', function() {
   clearTimeout(_searchTimer);
@@ -327,10 +341,8 @@ const CLI_TOKENS = [
   { token: 'created:today',    desc: 'Created today' },
   { token: 'created:7d',       desc: 'Created in last 7 days' },
   { token: 'created:30d',      desc: 'Created in last 30 days' },
-  // labels injected from server below
 ];
 
-// inject labels as CLI tokens
 const _labels = document.querySelectorAll('.chip.label-chip');
 _labels.forEach(c => {
   const lbl = c.textContent.trim().replace(/✕/g,'').trim();
@@ -403,7 +415,6 @@ function cliKey(e) {
 function insertToken(token) {
   const inp = document.getElementById('cliInput');
   const words = inp.value.split(/\s+/).filter(Boolean);
-  // replace last partial word
   const last = words[words.length - 1] || '';
   if (token.toLowerCase().startsWith(last.toLowerCase()) && last.length > 0) {
     words[words.length - 1] = token;
@@ -424,10 +435,9 @@ function applyCLI() {
     if (w.startsWith('priority:')) p.append('priority', w.split(':')[1]);
     else if (w.startsWith('due:'))      p.set('due', w.split(':')[1]);
     else if (w.startsWith('created:'))  p.set('created', w.split(':')[1]);
-    else if (w.includes(':'))           {} // unknown, ignore
-    else                                free.push(w); // treat as label or text
+    else if (w.includes(':'))           {}
+    else                                free.push(w);
   });
-  // try labels first, rest as free text
   const knownLabels = [...document.querySelectorAll('.chip.label-chip')]
     .map(c => c.textContent.trim().replace(/✕/g,'').trim().toLowerCase());
   free.forEach(w => {
@@ -462,22 +472,18 @@ document.addEventListener('keydown', function(e) {
     const inp = document.getElementById('searchInput');
     if (inp) { inp.focus(); inp.select(); }
   }
-  if (e.key === '?' && !e.shiftKey) {
-    openHelp();
-  }
+  if (e.key === '?' && !e.shiftKey) { openHelp(); }
   if (e.key === 'Escape') { closeCLI && closeCLI(); closeHelp(); }
   if (e.key === 'a' || e.key === 'A') location = '/archive';
   if (e.key === 'f' || e.key === 'F') toggleFilterBar();
 });
 
-// workflow vars — read from hidden data element (no template literals needed)
-
-// Workflow metadata cache — loaded once from /api/workflows
+// Workflow metadata cache
 let _workflows = [];
 fetch('/api/workflows')
   .then(function(r) { return r.json(); })
   .then(function(data) { _workflows = data; })
-  .catch(function(e) { /* fetch error */ });
+  .catch(function(e) {});
 function checkVarsRedirect(form) {
   var wfName = document.getElementById('wfSelect').value;
   var wf = _workflows.find(function(w) { return w.name === wfName; });
@@ -497,8 +503,6 @@ const _colCollapsed = {};
 
 function updateBoardGrid() {
   const cols = document.querySelectorAll('.board > .column');
-  const open = [...cols].filter(function(c) { return !c.classList.contains('collapsed'); }).length;
-  const total = cols.length;
   var template = '';
   cols.forEach(function(col) {
     template += col.classList.contains('collapsed') ? '40px ' : '1fr ';
@@ -519,7 +523,6 @@ function toggleCol(idx) {
   try { localStorage.setItem('colCollapsed', JSON.stringify(_colCollapsed)); } catch(e) {}
 }
 
-// restore collapse state
 (function() {
   try {
     const saved = JSON.parse(localStorage.getItem('colCollapsed') || '{}');
@@ -567,7 +570,6 @@ function toggleFilterBar() {
   const bar = document.getElementById('filterBar');
   if (bar.classList.contains('hidden')) showFilterBar(); else hideFilterBar();
 }
-// restore state
 (function() {
   try { if (localStorage.getItem('filterBarHidden')) { hideFilterBar(); } } catch(e) {}
 })();
