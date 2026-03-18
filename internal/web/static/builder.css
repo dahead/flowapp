@@ -207,6 +207,10 @@ header h1 span { color: var(--accent); }
 /* indent drop zones inside sections */
 .dz-indented.drag-over::after {
     left: 28px;
+    content: '+ modifier here';
+    background: rgba(99,102,241,0.08);
+    border-color: #6366f1;
+    color: #6366f1;
 }
 
 /* ── section node (header style) ── */

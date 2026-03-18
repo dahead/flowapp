@@ -90,7 +90,10 @@ document.addEventListener('mousemove', e => {
   if (!dragging) return;
   if (!e.buttons) { rmGhost(); clearZones(); dragging = null; dropTarget = null; return; }
   moveGhost(e.clientX, e.clientY);
-  const idx = hitZone(e.clientY);
+  const dtype = dragging.source === 'palette'
+    ? dragging.type
+    : (nodes[dragging.nodeIdx] || {}).type;
+  const idx = hitZone(e.clientY, dtype);
   dropTarget = idx;
   highlightZones(idx);
 });
@@ -127,9 +130,13 @@ function mkGhost(label, x, y) {
 function moveGhost(x,y){ const g=document.getElementById('dragGhost'); if(g){g.style.left=x+'px';g.style.top=y+'px';} }
 function rmGhost(){ const g=document.getElementById('dragGhost'); if(g)g.remove(); }
 
-function hitZone(y){
+function hitZone(y, dragType){
+  const needsModifier = MODIFIERS.has(dragType);
   let best = null, bestDist = 999;
   for(const z of document.querySelectorAll('.drop-zone')){
+    // check compatibility
+    if (needsModifier && z.dataset.accepts !== 'modifier') continue;
+    if (!needsModifier && z.dataset.accepts !== 'top-level') continue;
     const r = z.getBoundingClientRect();
     const mid = (r.top + r.bottom) / 2;
     const dist = Math.abs(y - mid);
@@ -152,11 +159,22 @@ function render() {
   const empty = document.getElementById('canvasEmpty');
   empty.style.display = nodes.length ? 'none' : 'block';
   list.innerHTML = '';
-  list.appendChild(mkDZ(-1, false));
+  list.appendChild(mkDZ(-1, 'top-level', false));
   nodes.forEach((n,i) => {
     const isModifier = MODIFIERS.has(n.type);
     list.appendChild(mkNode(n,i));
-    list.appendChild(mkDZ(i, isModifier));
+    // after a step or modifier: add modifier dz (indented) + top-level dz
+    // after section/variable: only top-level dz
+    if (n.type === 'step' || isModifier) {
+      // look ahead: if next node is also modifier, only show modifier dz
+      const nextIsModifier = i+1 < nodes.length && MODIFIERS.has(nodes[i+1].type);
+      list.appendChild(mkDZ(i, 'modifier', true));
+      if (!nextIsModifier) {
+        list.appendChild(mkDZ(i, 'top-level', false));
+      }
+    } else {
+      list.appendChild(mkDZ(i, 'top-level', false));
+    }
   });
   updatePreview();
 }
@@ -222,10 +240,11 @@ function mkNode(node, idx) {
   return div;
 }
 
-function mkDZ(afterIdx, indented) {
+function mkDZ(afterIdx, accepts, indented) {
   const dz = document.createElement('div');
   dz.className = 'drop-zone' + (indented ? ' dz-indented' : '');
   dz.dataset.after = afterIdx;
+  dz.dataset.accepts = accepts; // 'top-level' or 'modifier'
   return dz;
 }
 
