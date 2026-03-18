@@ -24,30 +24,31 @@
 <div class="preview-wrap" id="previewWrap"><pre id="previewCode"></pre></div>
 
 <div class="main">
-  <div class="canvas-wrap" id="canvasWrap">
+  <div class="canvas-wrap" id="canvasWrap" ondragstart="return false">
     <div class="canvas">
       <div class="empty" id="canvasEmpty"><span>📋</span>Drag elements from the right panel<br>to start building your workflow</div>
       <div id="nodeList"></div>
     </div>
   </div>
 
-  <div class="palette">
+  <div class="palette" ondragstart="return false">
     <h2>Elements</h2>
     <div class="sep">Structure</div>
     <div class="pi" data-type="section"><span class="ico">▦</span><div><div class="lbl">section</div><div class="dsc">Group of steps</div></div></div>
     <div class="pi" data-type="step">   <span class="ico">▶</span><div><div class="lbl">step</div><div class="dsc">Single task</div></div></div>
-    <div class="sep">Modifiers</div>
+    <div class="sep">Step modifiers</div>
     <div class="pi" data-type="note">   <span class="ico">📎</span><div><div class="lbl">note</div><div class="dsc">Hint text</div></div></div>
     <div class="pi" data-type="due">    <span class="ico">🕐</span><div><div class="lbl">due</div><div class="dsc">e.g. 2d, 1w</div></div></div>
-    <div class="pi" data-type="notify"> <span class="ico">📧</span><div><div class="lbl">notify</div><div class="dsc">Email on complete</div></div></div>
+    <div class="pi" data-type="assign"> <span class="ico">👤</span><div><div class="lbl">assign</div><div class="dsc">role:hr / user:anna</div></div></div>
+    <div class="pi" data-type="notify"> <span class="ico">📧</span><div><div class="lbl">notify</div><div class="dsc">role:x / email</div></div></div>
     <div class="pi" data-type="needs">  <span class="ico">⏳</span><div><div class="lbl">needs</div><div class="dsc">"A", "B" (AND-join)</div></div></div>
     <div class="pi" data-type="list">   <span class="ico">☑</span><div><div class="lbl">list</div><div class="dsc">Checklist item</div></div></div>
-    <div class="sep">Flow Control</div>
+    <div class="sep">Flow control</div>
     <div class="pi" data-type="ask">    <span class="ico">❓</span><div><div class="lbl">ask</div><div class="dsc">"?" -> "A", "B"</div></div></div>
     <div class="pi" data-type="gate">   <span class="ico">🔑</span><div><div class="lbl">gate</div><div class="dsc">External approval</div></div></div>
     <div class="pi" data-type="ends">   <span class="ico">⛔</span><div><div class="lbl">ends</div><div class="dsc">Terminal step</div></div></div>
     <div class="sep">Variables</div>
-    <div class="pi" data-type="variable">    <span class="ico">$</span><div><div class="lbl">var</div><div class="dsc">Instance variable</div></div></div>
+    <div class="pi" data-type="variable"><span class="ico">$</span><div><div class="lbl">var</div><div class="dsc">Instance variable</div></div></div>
   </div>
 </div>
 
@@ -56,18 +57,23 @@
 let nodes = [], nodeCounter = 0;
 let dragging = null, dropTarget = null;
 
+// modifier types get indented under steps
+const MODIFIERS = new Set(['note','due','assign','notify','needs','list','ask','gate','ends']);
+const TOP_LEVEL = new Set(['section','step','variable']);
+
 const DEF = {
-  section: { ico:'▦', lbl:'section', cls:'t-section n-section', ph:'Section name',       extra:null },
-  step:    { ico:'▶', lbl:'step',    cls:'t-step',              ph:'Step name',           extra:null },
-  note:    { ico:'📎', lbl:'note',   cls:'t-note',              ph:'Note text',           extra:null },
-  due:     { ico:'🕐', lbl:'due',    cls:'t-due',               ph:'2d / 1w / 4h',        extra:null },
-  notify:  { ico:'📧', lbl:'notify', cls:'t-notify',            ph:'email@company.com',   extra:null },
-  needs:   { ico:'⏳', lbl:'needs',  cls:'t-needs',             ph:'"Step A", "Step B"',  extra:null },
-  list:    { ico:'☑',  lbl:'list',   cls:'t-list',              ph:'Item text',           extra:'required' },
-  ask:     { ico:'❓', lbl:'ask',    cls:'t-ask',               ph:'"Question?" -> "Yes Step", "No Step"', extra:null },
-  gate:    { ico:'🔑', lbl:'gate',   cls:'t-gate',              ph:'(no text needed)',    extra:null },
-  ends:    { ico:'⛔', lbl:'ends',   cls:'t-ends',              ph:'(no text needed)',    extra:null },
-  variable: { ico:'$',   lbl:'var',    cls:'t-var',               ph:'VARIABLE_NAME',       extra:null },
+  section:  { ico:'▦',  lbl:'section', cls:'t-section', ph:'Section name',                         extra:null },
+  step:     { ico:'▶',  lbl:'step',    cls:'t-step',    ph:'Step name',                             extra:null },
+  note:     { ico:'📎', lbl:'note',    cls:'t-note',    ph:'Note text',                             extra:null },
+  due:      { ico:'🕐', lbl:'due',     cls:'t-due',     ph:'2d / 1w / 4h',                          extra:null },
+  assign:   { ico:'👤', lbl:'assign',  cls:'t-notify',  ph:'role:hr  or  user:anna@company.com',    extra:null },
+  notify:   { ico:'📧', lbl:'notify',  cls:'t-notify',  ph:'role:hr  or  email@company.com',        extra:null },
+  needs:    { ico:'⏳', lbl:'needs',   cls:'t-needs',   ph:'"Step A", "Step B"',                    extra:null },
+  list:     { ico:'☑',  lbl:'list',    cls:'t-list',    ph:'Item text',                             extra:'required' },
+  ask:      { ico:'❓', lbl:'ask',     cls:'t-ask',     ph:'"Question?" -> "Yes Step", "No Step"',  extra:null },
+  gate:     { ico:'🔑', lbl:'gate',    cls:'t-gate',    ph:'(no text needed)',                      extra:null },
+  ends:     { ico:'⛔', lbl:'ends',    cls:'t-ends',    ph:'(no text needed)',                      extra:null },
+  variable: { ico:'$',  lbl:'var',     cls:'t-var',     ph:'VARIABLE_NAME',                         extra:null },
 };
 
 // ── Drag from palette ──
@@ -82,8 +88,9 @@ document.querySelectorAll('.pi').forEach(el => {
 
 document.addEventListener('mousemove', e => {
   if (!dragging) return;
+  if (!e.buttons) { rmGhost(); clearZones(); dragging = null; dropTarget = null; return; }
   moveGhost(e.clientX, e.clientY);
-  const idx = hitZone(e.clientX, e.clientY);
+  const idx = hitZone(e.clientY);
   dropTarget = idx;
   highlightZones(idx);
 });
@@ -112,21 +119,31 @@ document.addEventListener('keydown', e => {
 function mkGhost(label, x, y) {
   const g = document.createElement('div');
   g.id = 'dragGhost';
-  g.style.cssText = 'position:fixed;pointer-events:none;z-index:9999;background:var(--accent);color:white;padding:5px 12px;border-radius:7px;font-size:0.83rem;font-weight:600;box-shadow:0 4px 16px rgba(108,99,255,0.35);transform:translate(-50%,-50%);left:'+x+'px;top:'+y+'px;';
+  g.style.cssText = 'position:fixed;pointer-events:none;z-index:9999;background:var(--accent);color:white;padding:5px 14px;border-radius:7px;font-size:0.83rem;font-weight:600;box-shadow:0 4px 16px rgba(108,99,255,0.35);transform:translate(-50%,-60%);left:'+x+'px;top:'+y+'px;white-space:nowrap;';
   g.textContent = label;
   document.body.appendChild(g);
   return g;
 }
 function moveGhost(x,y){ const g=document.getElementById('dragGhost'); if(g){g.style.left=x+'px';g.style.top=y+'px';} }
 function rmGhost(){ const g=document.getElementById('dragGhost'); if(g)g.remove(); }
-function hitZone(x,y){
+
+function hitZone(y){
+  let best = null, bestDist = 999;
   for(const z of document.querySelectorAll('.drop-zone')){
-    const r=z.getBoundingClientRect();
-    if(x>=r.left&&x<=r.right&&y>=r.top-12&&y<=r.bottom+12) return parseInt(z.dataset.after);
+    const r = z.getBoundingClientRect();
+    const mid = (r.top + r.bottom) / 2;
+    const dist = Math.abs(y - mid);
+    if (dist < 28 && dist < bestDist) { best = parseInt(z.dataset.after); bestDist = dist; }
   }
-  return null;
+  return best;
 }
-function highlightZones(idx){ document.querySelectorAll('.drop-zone').forEach(z=>z.classList.toggle('drag-over',parseInt(z.dataset.after)===idx)); }
+
+function highlightZones(idx){
+  document.querySelectorAll('.drop-zone').forEach(z => {
+    const hit = idx !== null && parseInt(z.dataset.after) === idx;
+    z.classList.toggle('drag-over', hit);
+  });
+}
 function clearZones(){ document.querySelectorAll('.drop-zone').forEach(z=>z.classList.remove('drag-over')); }
 
 // ── Render ──
@@ -135,18 +152,28 @@ function render() {
   const empty = document.getElementById('canvasEmpty');
   empty.style.display = nodes.length ? 'none' : 'block';
   list.innerHTML = '';
-  list.appendChild(mkDZ(-1));
-  nodes.forEach((n,i) => { list.appendChild(mkNode(n,i)); list.appendChild(mkDZ(i)); });
+  list.appendChild(mkDZ(-1, false));
+  nodes.forEach((n,i) => {
+    const isModifier = MODIFIERS.has(n.type);
+    list.appendChild(mkNode(n,i));
+    list.appendChild(mkDZ(i, isModifier));
+  });
   updatePreview();
+}
+
+function nodeClass(type) {
+  if (type === 'section') return 'node-section';
+  if (type === 'step')    return 'node-step';
+  if (type === 'variable') return 'node-variable';
+  return 'node-modifier';
 }
 
 function mkNode(node, idx) {
   const def = DEF[node.type];
-  if (!def) {
-    return document.createElement('div');
-  }
+  if (!def) return document.createElement('div');
+
   const div = document.createElement('div');
-  div.className = 'node' + (node.type === 'section' ? ' n-section' : '');
+  div.className = nodeClass(node.type);
 
   const nh = document.createElement('div');
   nh.className = 'nh';
@@ -162,16 +189,21 @@ function mkNode(node, idx) {
   const ico = document.createElement('span');
   ico.className = 'nicon'; ico.textContent = def.ico;
 
-  const lbl = document.createElement('span');
-  lbl.className = 'ntype ' + def.cls.split(' ')[0]; lbl.textContent = def.lbl;
+  // section: no type badge, just big input
+  if (node.type !== 'section') {
+    const lbl = document.createElement('span');
+    lbl.className = 'ntype ' + def.cls; lbl.textContent = def.lbl;
+    nh.appendChild(handle); nh.appendChild(ico); nh.appendChild(lbl);
+  } else {
+    nh.appendChild(handle); nh.appendChild(ico);
+  }
 
   const inp = document.createElement('input');
   inp.className = 'ni'; inp.type = 'text';
   inp.placeholder = def.ph; inp.value = node.value || '';
   if (node.type === 'gate' || node.type === 'ends') inp.style.display = 'none';
   inp.addEventListener('input', e => { node.value = e.target.value; updatePreview(); });
-
-  nh.appendChild(handle); nh.appendChild(ico); nh.appendChild(lbl); nh.appendChild(inp);
+  nh.appendChild(inp);
 
   if (def.extra === 'required') {
     const btn = document.createElement('button');
@@ -190,43 +222,42 @@ function mkNode(node, idx) {
   return div;
 }
 
-function mkDZ(afterIdx) {
+function mkDZ(afterIdx, indented) {
   const dz = document.createElement('div');
-  dz.className = 'drop-zone'; dz.dataset.after = afterIdx;
+  dz.className = 'drop-zone' + (indented ? ' dz-indented' : '');
+  dz.dataset.after = afterIdx;
   return dz;
 }
 
-// ── Code generation (no template literals to avoid Go template conflicts) ──
+// ── Code generation ──
 function q(s) { return '"' + s + '"'; }
 function generate() {
-  var name     = document.getElementById('wfName').value.trim() || 'My Workflow';
-  var labels   = document.getElementById('wfLabels').value.trim();
+  var name   = document.getElementById('wfName').value.trim() || 'My Workflow';
+  var labels = document.getElementById('wfLabels').value.trim();
   var lines = [];
   lines.push('workflow ' + q(name));
   if (labels) labels.split(',').forEach(function(l){ l=l.trim(); if(l) lines.push('label ' + l); });
-
-  // var declarations go at top
   nodes.forEach(function(n) {
     if (n.type === 'variable') lines.push('var ' + (n.value||'VARIABLE_NAME').trim());
   });
   nodes.forEach(function(n) {
     var v = (n.value||'').trim();
     switch(n.type) {
-      case 'variable': break; // already handled above
+      case 'variable': break;
       case 'section': lines.push(''); lines.push('section ' + q(v||'Section')); break;
       case 'step':    lines.push('  step '   + q(v||'Step')); break;
-      case 'note':    lines.push('  note '   + q(v)); break;
-      case 'due':     lines.push('  due '    + (v||'1d')); break;
-      case 'notify':  lines.push('  notify ' + q(v)); break;
-      case 'needs':   lines.push('  needs '  + (v||q('Step Name'))); break;
-      case 'list':    lines.push('  list '   + q(v) + (n.required===false?' optional':'')); break;
+      case 'note':    lines.push('    note '   + q(v)); break;
+      case 'due':     lines.push('    due '    + (v||'1d')); break;
+      case 'assign':  lines.push('    assign ' + q(v)); break;
+      case 'notify':  lines.push('    notify ' + q(v)); break;
+      case 'needs':   lines.push('    needs '  + (v||q('Step Name'))); break;
+      case 'list':    lines.push('    list '   + q(v) + (n.required===false?' optional':'')); break;
       case 'ask':
-        if (v.indexOf('->') >= 0) lines.push('  ask ' + v);
-        else lines.push('  ask ' + q(v||'Question?') + ' -> "Option A", "Option B"');
+        if (v.indexOf('->') >= 0) lines.push('    ask ' + v);
+        else lines.push('    ask ' + q(v||'Question?') + ' -> "Option A", "Option B"');
         break;
-      case 'gate':    lines.push('  gate'); break;
-      case 'ends':    lines.push('  ends'); break;
-
+      case 'gate':    lines.push('    gate'); break;
+      case 'ends':    lines.push('    ends'); break;
     }
   });
   return lines.join('\n');
@@ -253,51 +284,36 @@ function download() {
   a.click();
 }
 
-// ── DSL Parser (client-side) ──
+// ── DSL Parser ──
 function parseWorkflow(text) {
-  nodes = [];
-  nodeCounter = 0;
+  nodes = []; nodeCounter = 0;
   let labels = [];
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.trim();
     if (!line || line.startsWith('#')) continue;
     const spaceIdx = line.indexOf(' ');
-    const kw = spaceIdx >= 0 ? line.slice(0, spaceIdx).toLowerCase() : line.toLowerCase();
+    const kw   = spaceIdx >= 0 ? line.slice(0, spaceIdx).toLowerCase() : line.toLowerCase();
     const rest = spaceIdx >= 0 ? line.slice(spaceIdx + 1).trim() : '';
     const unquote = s => s.replace(/^"|"$/g, '').trim();
-
     switch (kw) {
-      case 'workflow':
-        document.getElementById('wfName').value = unquote(rest); break;
-      case 'label':
-        labels.push(rest.toLowerCase()); break;
-      case 'section':
-        nodes.push({ id: ++nodeCounter, type: 'section', value: unquote(rest) }); break;
-      case 'step':
-        nodes.push({ id: ++nodeCounter, type: 'step', value: unquote(rest) }); break;
-      case 'note':
-        nodes.push({ id: ++nodeCounter, type: 'note', value: unquote(rest) }); break;
-      case 'due':
-        nodes.push({ id: ++nodeCounter, type: 'due', value: rest }); break;
-      case 'notify':
-        nodes.push({ id: ++nodeCounter, type: 'notify', value: unquote(rest) }); break;
-      case 'needs':
-        nodes.push({ id: ++nodeCounter, type: 'needs', value: rest }); break;
+      case 'workflow': document.getElementById('wfName').value = unquote(rest); break;
+      case 'label':   labels.push(rest.toLowerCase()); break;
+      case 'section': nodes.push({ id:++nodeCounter, type:'section',  value:unquote(rest) }); break;
+      case 'step':    nodes.push({ id:++nodeCounter, type:'step',     value:unquote(rest) }); break;
+      case 'note':    nodes.push({ id:++nodeCounter, type:'note',     value:unquote(rest) }); break;
+      case 'due':     nodes.push({ id:++nodeCounter, type:'due',      value:rest }); break;
+      case 'assign':  nodes.push({ id:++nodeCounter, type:'assign',   value:unquote(rest) }); break;
+      case 'notify':  nodes.push({ id:++nodeCounter, type:'notify',   value:unquote(rest) }); break;
+      case 'needs':   nodes.push({ id:++nodeCounter, type:'needs',    value:rest }); break;
       case 'list': {
         const req = !rest.toLowerCase().endsWith(' optional');
-        const text = req
-          ? (rest.toLowerCase().endsWith(' required') ? rest.slice(0, -9).trim() : rest)
-          : rest.slice(0, -9).trim();
-        nodes.push({ id: ++nodeCounter, type: 'list', value: unquote(text), required: req }); break;
+        const t = req ? (rest.toLowerCase().endsWith(' required') ? rest.slice(0,-9).trim() : rest) : rest.slice(0,-9).trim();
+        nodes.push({ id:++nodeCounter, type:'list', value:unquote(t), required:req }); break;
       }
-      case 'ask':
-        nodes.push({ id: ++nodeCounter, type: 'ask', value: rest }); break;
-      case 'gate':
-        nodes.push({ id: ++nodeCounter, type: 'gate', value: '' }); break;
-      case 'ends':
-        nodes.push({ id: ++nodeCounter, type: 'ends', value: '' }); break;
-      case 'var':
-        nodes.push({ id: ++nodeCounter, type: 'variable', value: rest }); break;
+      case 'ask':  nodes.push({ id:++nodeCounter, type:'ask',  value:rest }); break;
+      case 'gate': nodes.push({ id:++nodeCounter, type:'gate', value:'' });   break;
+      case 'ends': nodes.push({ id:++nodeCounter, type:'ends', value:'' });   break;
+      case 'var':  nodes.push({ id:++nodeCounter, type:'variable', value:rest }); break;
     }
   }
   document.getElementById('wfLabels').value = labels.join(', ');
@@ -305,39 +321,23 @@ function parseWorkflow(text) {
 }
 
 function loadFile(input) {
-  const file = input.files[0];
-  if (!file) return;
+  const file = input.files[0]; if (!file) return;
   const reader = new FileReader();
   reader.onload = e => parseWorkflow(e.target.result);
   reader.readAsText(file);
-  input.value = ''; // reset so same file can be reloaded
+  input.value = '';
 }
 
-// File drag/drop — attached via JS to avoid conflicts with node DnD
 function initFileDrop() {
   const wrap = document.getElementById('canvasWrap');
-  wrap.addEventListener('dragenter', e => {
-    if (e.dataTransfer.types.includes('Files')) {
-      e.preventDefault();
-      wrap.classList.add('dragover');
-    }
-  });
-  wrap.addEventListener('dragover', e => {
-    if (e.dataTransfer.types.includes('Files')) {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'copy';
-    }
-  });
-  wrap.addEventListener('dragleave', e => {
-    if (!wrap.contains(e.relatedTarget)) wrap.classList.remove('dragover');
-  });
+  wrap.addEventListener('dragenter', e => { if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); wrap.classList.add('dragover'); } });
+  wrap.addEventListener('dragover',  e => { if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } });
+  wrap.addEventListener('dragleave', e => { if (!wrap.contains(e.relatedTarget)) wrap.classList.remove('dragover'); });
   wrap.addEventListener('drop', e => {
     wrap.classList.remove('dragover');
     if (!e.dataTransfer.files.length) return;
-    e.preventDefault();
-    e.stopPropagation();
-    const file = e.dataTransfer.files[0];
-    if (!file) return;
+    e.preventDefault(); e.stopPropagation();
+    const file = e.dataTransfer.files[0]; if (!file) return;
     const reader = new FileReader();
     reader.onload = ev => parseWorkflow(ev.target.result);
     reader.readAsText(file);

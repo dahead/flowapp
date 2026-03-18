@@ -65,14 +65,6 @@
         <label>Titel</label>
         <input type="text" name="title" value="{{.Title}}" placeholder="Instanz-Titel…" autofocus>
       </div>
-      <div class="field">
-        <label>Priorität</label>
-        <select name="priority">
-          <option value="low"{{if eq .Priority "low"}} selected{{end}}>Low</option>
-          <option value="medium"{{if or (eq .Priority "medium") (eq .Priority "")}} selected{{end}}>Medium</option>
-          <option value="high"{{if eq .Priority "high"}} selected{{end}}>High</option>
-        </select>
-      </div>
       {{if .Vars}}
       <hr class="ni-divider">
       {{range .Vars}}

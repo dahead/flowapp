@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"flowapp/internal/dsl"
 	"flowapp/internal/logger"
+	"flowapp/internal/notifications"
 	"fmt"
 	"strconv"
 	"strings"
@@ -485,7 +486,7 @@ func (inst *Instance) TickOverdue() bool {
 			}
 			if sink != nil {
 				sink.Notify(InAppNotification{
-					Kind: "overdue", InstanceID: inst.ID, InstanceName: inst.Title,
+					Kind: string(notifications.KindOverdue), InstanceID: inst.ID, InstanceName: inst.Title,
 					WorkflowName: inst.WorkflowName, StepName: scopy.Name,
 					Message: fmt.Sprintf("Step \"%s\" in \"%s\" is overdue.", scopy.Name, inst.Title),
 					Targets: targets,
@@ -946,7 +947,7 @@ func fireAssignNotify(inst *Instance, step *StepState, m Mailer, resolve EmailRe
 
 	if sink != nil {
 		sink.Notify(InAppNotification{
-			Kind: "assign", InstanceID: inst.ID, InstanceName: inst.Title,
+			Kind: string(notifications.KindAssign), InstanceID: inst.ID, InstanceName: inst.Title,
 			WorkflowName: inst.WorkflowName, StepName: step.Name,
 			Message: fmt.Sprintf("You have been assigned to step \"%s\" in \"%s\".", step.Name, inst.Title),
 			Targets: step.Assign,
@@ -993,7 +994,7 @@ func fireNotify(inst *Instance, step *StepState, m Mailer, resolve EmailResolver
 	}
 	if sink != nil {
 		sink.Notify(InAppNotification{
-			Kind: "notify", InstanceID: inst.ID, InstanceName: inst.Title,
+			Kind: string(notifications.KindNotify), InstanceID: inst.ID, InstanceName: inst.Title,
 			WorkflowName: inst.WorkflowName, StepName: step.Name,
 			Message: msg, GateURL: gateURL,
 			Targets: step.Notify,

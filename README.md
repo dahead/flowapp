@@ -22,6 +22,10 @@ Users see only their own workflows:
 
 ![FlowApp screenshot](/screenshots/workflow-instances-different-user-v2.png)
 
+(External) approval links:
+
+![FlowApp screenshot](/screenshots/approval-link-v2.png)
+
 Workflow builder:
 
 ![FlowApp screenshot](/screenshots/builder-loaded-v2.png)
@@ -147,7 +151,6 @@ Workflow files live in `workflows/`. They are hot-reloaded on save — no restar
 
 ```
 workflow "Name"
-priority high          # low | medium | high (default: medium)
 label finance          # multiple labels allowed
 allowed_roles role:hr role:finance  # who may start this workflow (empty = all users with write access)
 var "Employee Name"    # prompts for a value when creating an instance ($Employee Name)

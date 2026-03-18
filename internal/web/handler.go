@@ -689,7 +689,7 @@ func (h *Handler) newInstancePrompt(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	// no vars — create directly without showing the prompt page
-	if _, err := h.store.CreateInstance(wfName, title, priority, u.ID); err != nil {
+	if _, err := h.store.CreateInstance(wfName, title, u.ID); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -785,7 +785,7 @@ func (h *Handler) createInstance(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	inst, err := h.store.CreateInstance(wfName, title, r.FormValue("priority"), u.ID)
+	inst, err := h.store.CreateInstance(wfName, title, u.ID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return

@@ -330,7 +330,7 @@ func (s *Store) AllLabels() []string {
 // priority may be empty to use the workflow default.
 // Mailer and EmailResolver are set before the initial activation so that
 // notifications fire correctly for steps that are immediately ready.
-func (s *Store) CreateInstance(workflowName, title, priority, createdBy string) (*engine.Instance, error) {
+func (s *Store) CreateInstance(workflowName, title, createdBy string) (*engine.Instance, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	wf, ok := s.definitions[workflowName]
