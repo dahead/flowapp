@@ -6,21 +6,39 @@ A lightweight workflow management app written in Go. Define processes as `.workf
 
 ![FlowApp screenshot main page overview](/screenshots/overview-dark-v2.png)
 
-Filter / search:
+New workflow:
 
-![FlowApp screenshot search](/screenshots/overview-dark-search-v2.png)
+![FlowApp new workflow](/screenshots/new-workflow-assistant-v2.png)
 
 Workflow in detail:
 
-![FlowApp screenshot](/screenshots/workflow-v2.png)
+![FlowApp workflow](/screenshots/workflow-instance-v2.png)
+
+User menu:
+
+![FlowApp workflow with user menu](/screenshots/workflow-instance-menu-v2.png)
+
+Users see only their own workflows:
+
+![FlowApp screenshot](/screenshots/workflow-instances-different-user-v2.png)
 
 Workflow builder:
 
 ![FlowApp screenshot](/screenshots/builder-loaded-v2.png)
 
-User management:
+Administration User management:
 
-![FlowApp screenshot](/screenshots/usermanagement-v2.png)
+![FlowApp screenshot](/screenshots/user-management-v2.png)
+
+User login:
+
+![FlowApp screenshot](/screenshots/login-v2.png)
+
+Filter / search:
+
+![FlowApp screenshot search](/screenshots/overview-dark-search-v2.png)
+
+
 
 ## Quick Start
 
