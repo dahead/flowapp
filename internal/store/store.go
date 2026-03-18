@@ -4,9 +4,10 @@ import (
 	"encoding/json"
 	"flowapp/internal/dsl"
 	"flowapp/internal/engine"
+	"flowapp/internal/logger"
 	"flowapp/internal/mailer"
+	"flowapp/internal/notifications"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,6 +17,8 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
+var storeLog = logger.New("store")
+
 // Store is the central data layer. It holds workflow definitions (loaded from .workflow files)
 // and active instances (persisted as JSON files in dataDir). All public methods are safe
 // for concurrent use.
@@ -24,25 +27,41 @@ type Store struct {
 	dataDir     string
 	workflowDir string
 	definitions map[string]*dsl.Workflow
-	fileNames   map[string]string // workflow name → filename (e.g. "Onboarding" → "onboarding.workflow")
 	instances   map[string]*engine.Instance
 
 	// optional mailer and email resolver; nil = log-only notifications
 	mailer        engine.Mailer
 	emailResolver engine.EmailResolver
+
+	// in-app notification store
+	notifStore *notifications.Store
+
+	// adminIDs holds user IDs of all admins, refreshed via SetAdminIDs.
+	adminIDs []string
+
+	// emailToUserID maps email address → user ID for in-app notification fan-out.
+	emailToUserID map[string]string
 }
 
 // New creates a Store, loads all workflow definitions and persisted instances,
 // then starts a background file-watcher for hot-reloading workflows and a
 // scheduler goroutine for time-based step activation.
+// Instance data is stored under dataDir/common; notifications under dataDir/notifications.
 func New(workflowDir, dataDir string) (*Store, error) {
-	log.Printf("[store] starting — workflowDir=%s dataDir=%s", workflowDir, dataDir)
-	s := &Store{
-		workflowDir: workflowDir, dataDir: dataDir,
-		definitions: make(map[string]*dsl.Workflow),
-		instances:   make(map[string]*engine.Instance),
+	commonDir := filepath.Join(dataDir, "instances")
+	storeLog.Info("starting — workflowDir=%s dataDir=%s", workflowDir, commonDir)
+	ns, err := notifications.New(filepath.Join(dataDir, "notifications"))
+	if err != nil {
+		return nil, err
 	}
-	if err := os.MkdirAll(dataDir, 0755); err != nil {
+	s := &Store{
+		workflowDir: workflowDir, dataDir: commonDir,
+		definitions:   make(map[string]*dsl.Workflow),
+		instances:     make(map[string]*engine.Instance),
+		notifStore:    ns,
+		emailToUserID: make(map[string]string),
+	}
+	if err := os.MkdirAll(commonDir, 0755); err != nil {
 		return nil, err
 	}
 	if err := s.loadDefinitions(); err != nil {
@@ -63,12 +82,92 @@ func (s *Store) SetMailer(m engine.Mailer, r engine.EmailResolver) {
 	s.emailResolver = r
 }
 
-// inject sets the runtime-only Mailer and EmailResolver fields on an instance
+// SetAdminIDs sets the list of admin user IDs that receive copies of all notifications.
+func (s *Store) SetAdminIDs(ids []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.adminIDs = ids
+}
+
+// SetEmailUserIndex sets the email→userID lookup table used for in-app notification fan-out.
+// Should be called at startup and whenever users change.
+func (s *Store) SetEmailUserIndex(idx map[string]string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.emailToUserID = idx
+}
+
+// Notifications returns the in-app notification store.
+func (s *Store) Notifications() *notifications.Store {
+	return s.notifStore
+}
+
+// Notify implements engine.NotificationSink. It fans out an in-app notification
+// to all matching internal users (resolved via emailResolver) and to all admins.
+func (s *Store) Notify(n engine.InAppNotification) {
+	// resolve target expressions → user IDs via emailResolver
+	seen := map[string]bool{}
+	if s.emailResolver != nil {
+		for _, target := range n.Targets {
+			emails := s.emailResolver(target)
+			for _, email := range emails {
+				seen[email] = true
+			}
+		}
+	}
+	// find user IDs by email
+	userIDs := s.resolveUserIDsByEmail(seen)
+
+	// always include admins
+	s.mu.RLock()
+	admins := s.adminIDs
+	s.mu.RUnlock()
+	for _, id := range admins {
+		userIDs[id] = true
+	}
+
+	storeLog.Debug("Notify kind=%s step=%q targets=%v resolved=%d admins=%d",
+		n.Kind, n.StepName, n.Targets, len(userIDs)-len(admins), len(admins))
+
+	notif := notifications.Notification{
+		Kind:         notifications.Kind(n.Kind),
+		InstanceID:   n.InstanceID,
+		InstanceName: n.InstanceName,
+		WorkflowName: n.WorkflowName,
+		StepName:     n.StepName,
+		Message:      n.Message,
+		GateURL:      n.GateURL,
+	}
+	for uid := range userIDs {
+		s.notifStore.Add(uid, notif)
+		storeLog.Debug("Notify → user %s (%s)", uid, n.Kind)
+	}
+}
+
+// resolveUserIDsByEmail looks up internal user IDs for a set of email addresses.
+// Must NOT be called with s.mu held (acquires RLock internally via injected resolver).
+func (s *Store) resolveUserIDsByEmail(emails map[string]bool) map[string]bool {
+	// We don't have direct access to the UserStore here; instead we use the
+	// emailToUserID index that is set via SetEmailUserIndex.
+	s.mu.RLock()
+	idx := s.emailToUserID
+	s.mu.RUnlock()
+	result := map[string]bool{}
+	for email := range emails {
+		if uid, ok := idx[email]; ok {
+			result[uid] = true
+		}
+	}
+	return result
+}
+
+// inject sets the runtime-only Mailer, EmailResolver, and NotifySink fields on an instance
 // before any engine method is called. Instances loaded from disk don't carry
 // these fields, so they must be re-injected each time.
 func (s *Store) inject(inst *engine.Instance) {
 	inst.MailSender = s.mailer
 	inst.EmailResolver = s.emailResolver
+	inst.NotifySink = s
 }
 
 // runScheduler ticks every minute and activates any scheduled steps whose time has arrived.
@@ -88,7 +187,7 @@ func (s *Store) runScheduler() {
 			}
 			if changed {
 				if err := s.save(inst); err != nil {
-					log.Printf("[scheduler] save error for %s: %v", inst.ID, err)
+					storeLog.Error("scheduler: save error for %s: %v", inst.ID, err)
 				}
 			}
 		}
@@ -102,7 +201,7 @@ func (s *Store) runScheduler() {
 func (s *Store) watchWorkflows() {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
-		log.Printf("fsnotify: %v", err)
+		storeLog.Error("fsnotify init: %v", err)
 		return
 	}
 	defer watcher.Close()
@@ -121,16 +220,16 @@ func (s *Store) watchWorkflows() {
 			s.mu.Lock()
 			s.definitions = make(map[string]*dsl.Workflow)
 			if err := s.loadDefinitions(); err != nil {
-				log.Printf("hot-reload error: %v", err)
+				storeLog.Error("hot-reload: %v", err)
 			} else {
-				log.Printf("[store] hot-reload: %d workflow(s) reloaded", len(s.definitions))
+				storeLog.Info("hot-reload: %d workflow(s) reloaded", len(s.definitions))
 			}
 			s.mu.Unlock()
 		case err, ok := <-watcher.Errors:
 			if !ok {
 				return
 			}
-			log.Printf("fsnotify error: %v", err)
+			storeLog.Error("fsnotify: %v", err)
 		}
 	}
 }
@@ -153,11 +252,11 @@ func (s *Store) loadDefinitions() error {
 		}
 		wf, err := dsl.Parse(string(data))
 		if err != nil {
-			log.Printf("parse error in %s: %v (skipping)", e.Name(), err)
+			storeLog.Warn("parse error in %s: %v (skipping)", e.Name(), err)
 			continue
 		}
 		if err := dsl.DetectCycles(wf); err != nil {
-			log.Printf("[store] cycle detected in %s: %v (skipping)", e.Name(), err)
+			storeLog.Warn("cycle detected in %s: %v (skipping)", e.Name(), err)
 			continue
 		}
 		// deduplicate names by appending a counter
@@ -169,10 +268,10 @@ func (s *Store) loadDefinitions() error {
 			wf.Name = fmt.Sprintf("%s -%d", origName, i)
 		}
 		if wf.Name != origName {
-			log.Printf("[store] WARNING: duplicate name '%s' in %s — renamed to '%s'", origName, e.Name(), wf.Name)
+			storeLog.Warn("duplicate workflow name %s in %s — renamed to %s", origName, e.Name(), wf.Name)
 		}
 		s.definitions[wf.Name] = wf
-		log.Printf("[store] loaded workflow: %s (from %s)", wf.Name, e.Name())
+		storeLog.Debug("loaded workflow: %s (from %s)", wf.Name, e.Name())
 	}
 	return nil
 }
@@ -197,17 +296,23 @@ func (s *Store) loadInstances() error {
 		}
 		s.instances[inst.ID] = &inst
 	}
-	log.Printf("[store] loaded %d instance(s)", len(s.instances))
+	storeLog.Info("loaded %d instance(s)", len(s.instances))
 	return nil
 }
 
-// save serialises an instance to its JSON file in dataDir.
+// save serialises an instance to its JSON file in dataDir using an atomic
+// write (temp file + rename) to prevent corruption on crash.
 func (s *Store) save(inst *engine.Instance) error {
-	data, err := json.MarshalIndent(inst, "", "  ")
+	data, err := json.Marshal(inst)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(s.dataDir, inst.ID+".json"), data, 0644)
+	dest := filepath.Join(s.dataDir, inst.ID+".json")
+	tmp := dest + ".tmp"
+	if err := os.WriteFile(tmp, data, 0644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, dest)
 }
 
 // Definitions returns all currently loaded workflow definitions.
@@ -254,9 +359,9 @@ func (s *Store) CreateInstance(workflowName, title, priority string) (*engine.In
 		wfCopy.Priority = priority
 	}
 	id := fmt.Sprintf("%d", time.Now().UnixNano())
-	inst := engine.NewInstance(id, title, &wfCopy, s.mailer, s.emailResolver)
+	inst := engine.NewInstance(id, title, &wfCopy, s.mailer, s.emailResolver, s)
 	s.instances[id] = inst
-	log.Printf("[store] created instance %s — '%s' (%s)", id, title, workflowName)
+	storeLog.Info("created instance %s — %s (%s)", id, title, workflowName)
 	return inst, s.save(inst)
 }
 
@@ -276,9 +381,9 @@ func (s *Store) CloneInstance(id string) (*engine.Instance, error) {
 	wfCopy := *wf
 	wfCopy.Priority = src.Priority
 	newID := fmt.Sprintf("%d", time.Now().UnixNano())
-	inst := engine.NewInstance(newID, src.Title+" (copy)", &wfCopy, s.mailer, s.emailResolver)
+	inst := engine.NewInstance(newID, src.Title+" (copy)", &wfCopy, s.mailer, s.emailResolver, s)
 	s.instances[newID] = inst
-	log.Printf("[store] cloned instance %s → %s ('%s')", id, newID, inst.Title)
+	storeLog.Info("cloned instance %s → %s (%s)", id, newID, inst.Title)
 	return inst, s.save(inst)
 }
 
@@ -379,7 +484,7 @@ func (s *Store) RedeemGate(token string, chosenIdx int) (*engine.Instance, *engi
 	if err != nil {
 		return nil, nil, err
 	}
-	log.Printf("[store] gate redeemed — instance %s step '%s' choice=%d", targetInst.ID, step.Name, chosenIdx)
+	storeLog.Info("gate redeemed — instance %s step %q choice=%d", targetInst.ID, step.Name, chosenIdx)
 	return targetInst, step, s.save(targetInst)
 }
 
@@ -406,7 +511,7 @@ func (s *Store) UpdateInstance(id, title, priority, labels string) error {
 		}
 	}
 	inst.Labels = parsed
-	log.Printf("[store] updated instance %s — title='%s' priority=%s labels=%v", id, inst.Title, inst.Priority, inst.Labels)
+	storeLog.Debug("updated instance %s — title=%s priority=%s labels=%v", id, inst.Title, inst.Priority, inst.Labels)
 	inst.UpdatedAt = time.Now()
 	return s.save(inst)
 }
@@ -504,7 +609,7 @@ func (s *Store) ReorderInstances(ids []string) error {
 			}
 		}
 	}
-	log.Printf("[store] reordered %d instances", len(ids))
+	storeLog.Debug("reordered %d instances", len(ids))
 	return nil
 }
 
@@ -518,7 +623,7 @@ func (s *Store) ArchiveInstance(id string) error {
 	}
 	inst.Archived = true
 	inst.UpdatedAt = time.Now()
-	log.Printf("[store] archived instance %s ('%s')", id, inst.Title)
+	storeLog.Info("archived instance %s (%q)", id, inst.Title)
 	return s.save(inst)
 }
 
@@ -527,10 +632,42 @@ func (s *Store) DeleteInstance(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if inst, ok := s.instances[id]; ok {
-		log.Printf("[store] deleted instance %s ('%s')", id, inst.Title)
+		storeLog.Info("deleted instance %s (%q)", id, inst.Title)
 	}
 	delete(s.instances, id)
 	return os.Remove(filepath.Join(s.dataDir, id+".json"))
+}
+
+// FullReset removes all instance JSON files from disk and clears the in-memory map.
+// Notification files are also deleted. Call UserStore.FullReset and
+// auth.DeleteSessionSecret separately for a complete wipe.
+func (s *Store) FullReset() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// delete all instance files
+	entries, _ := os.ReadDir(s.dataDir)
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".json") {
+			_ = os.Remove(filepath.Join(s.dataDir, e.Name()))
+		}
+	}
+	s.instances = make(map[string]*engine.Instance)
+
+	// delete all notification files and reset the in-memory cache
+	notifDir := filepath.Join(filepath.Dir(s.dataDir), "notifications")
+	notifEntries, _ := os.ReadDir(notifDir)
+	for _, e := range notifEntries {
+		if !e.IsDir() && (strings.HasSuffix(e.Name(), ".json") || strings.HasSuffix(e.Name(), ".tmp")) {
+			_ = os.Remove(filepath.Join(notifDir, e.Name()))
+		}
+	}
+	if s.notifStore != nil {
+		s.notifStore.Reset()
+	}
+
+	storeLog.Info("FullReset: all instances and notifications deleted")
+	return nil
 }
 
 // ── Mail configuration ────────────────────────────────────────────────────────
@@ -553,18 +690,22 @@ func (s *Store) SaveMailConfig(cfg *mailer.Config, resolver engine.EmailResolver
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return err
 	}
-	data, err := json.MarshalIndent(cfg, "", "  ")
+	data, err := json.Marshal(cfg)
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0644); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
 		return err
 	}
 	// reload the active mailer
 	if cfg.Type != "" {
 		if m, err := mailer.NewMailerFromConfig(cfg); err == nil {
 			s.SetMailer(mailer.EngineAdapter{M: m, From: cfg.From}, resolver)
-			log.Printf("[store] mail config reloaded: type=%s", cfg.Type)
+			storeLog.Info("mail config reloaded: type=%s", cfg.Type)
 		} else {
 			return fmt.Errorf("config saved but mailer init failed: %w", err)
 		}

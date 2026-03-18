@@ -4,14 +4,16 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"flowapp/internal/logger"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"time"
 )
+
+var graphLog = logger.New("mailer/graph")
 
 // GraphMailer sends mail via the Microsoft Graph API (v1.0) using OAuth2 client credentials.
 // Requires Mail.Send permission on the Azure application registration.
@@ -39,17 +41,17 @@ func NewGraphMailer(tenantID, clientID, clientSecret, senderUPN string) *GraphMa
 // Send acquires an access token (from cache if still valid) and delivers the message
 // via the Graph sendMail endpoint.
 func (g *GraphMailer) Send(msg Message) error {
-	log.Printf("[mailer/graph] sending email — subject: %q to: %v", msg.Subject, msg.To)
+	graphLog.Info("sending email — subject: %q to: %v", msg.Subject, msg.To)
 	token, err := g.getToken()
 	if err != nil {
-		log.Printf("[mailer/graph] failed to get token: %v", err)
+		graphLog.Error("failed to get token: %v", err)
 		return fmt.Errorf("get token: %w", err)
 	}
 	if err := g.sendMail(token, msg); err != nil {
-		log.Printf("[mailer/graph] send failed — subject: %q to: %v: %v", msg.Subject, msg.To, err)
+		graphLog.Error("send failed — subject: %q to: %v: %v", msg.Subject, msg.To, err)
 		return err
 	}
-	log.Printf("[mailer/graph] email sent successfully — subject: %q to: %v", msg.Subject, msg.To)
+	graphLog.Info("email sent successfully — subject: %q to: %v", msg.Subject, msg.To)
 	return nil
 }
 
@@ -59,7 +61,7 @@ func (g *GraphMailer) getToken() (string, error) {
 	if g.cachedToken != "" && time.Now().Before(g.tokenExpiresAt) {
 		return g.cachedToken, nil
 	}
-	log.Printf("[mailer/graph] fetching OAuth2 token for tenant %s", g.TenantID)
+	graphLog.Debug("fetching OAuth2 token for tenant %s", g.TenantID)
 	url := fmt.Sprintf("https://login.microsoftonline.com/%s/oauth2/v2.0/token", g.TenantID)
 	body := fmt.Sprintf(
 		"grant_type=client_credentials&client_id=%s&client_secret=%s&scope=https://graph.microsoft.com/.default",
@@ -79,12 +81,12 @@ func (g *GraphMailer) getToken() (string, error) {
 		return "", err
 	}
 	if result.Error != "" {
-		log.Printf("[mailer/graph] token error: %s: %s", result.Error, result.Description)
+		graphLog.Error("token error: %s: %s", result.Error, result.Description)
 		return "", fmt.Errorf("%s: %s", result.Error, result.Description)
 	}
 	g.cachedToken = result.AccessToken
 	g.tokenExpiresAt = time.Now().Add(55 * time.Minute)
-	log.Printf("[mailer/graph] token acquired successfully")
+	graphLog.Debug("token acquired successfully")
 	return g.cachedToken, nil
 }
 

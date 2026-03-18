@@ -1,4 +1,4 @@
-# FlowApp v2
+# FlowApp
 
 A lightweight workflow management app written in Go. Define processes as `.workflow` files, run instances, track parallel tasks, collect external approvals via tokenized links, and get notified by email.
 
@@ -29,7 +29,23 @@ go run ./cmd/server
 # → http://localhost:8080
 ```
 
-On first start with an empty `data/` directory, FlowApp redirects to `/setup` to create the first admin account.
+On first start FlowApp creates `data/` and `config/` automatically and redirects to `/setup` to create the first admin account.
+
+## Directory Layout
+
+```
+data/
+  instances/       runtime workflow instances (one JSON per instance)
+  notifications/   in-app notifications (one JSON per user)
+  users.json       user accounts
+  session-secret   HMAC key for session cookies (auto-generated)
+config/
+  mail.json        mail backend configuration (optional)
+workflows/
+  *.workflow       workflow definitions (hot-reloaded on save)
+```
+
+Everything needed to back up or migrate FlowApp is in `data/` and `config/`.
 
 ## Command Line Flags
 
@@ -37,29 +53,49 @@ On first start with an empty `data/` directory, FlowApp redirects to `/setup` to
 ./flowapp [flags]
 
   --port       int     HTTP listen port (default: 8080)
-  --data       string  Directory for instance data files (default: "data")
+  --data       string  Directory for all runtime data — instances, users, notifications, session secret (default: "data")
+  --config     string  Directory for configuration files — mail.json (default: "config")
   --workflows  string  Directory for .workflow definition files (default: "workflows")
 ```
 
 Example:
 
 ```bash
-./flowapp --port 9090 --data /var/flowapp/data --workflows /etc/flowapp/workflows
+./flowapp --port 9090 --data /var/flowapp/data --config /etc/flowapp/config --workflows /etc/flowapp/workflows
 ```
 
 ## Session Secret
 
-By default FlowApp generates a random session secret on first start and persists it to `~/.config/flowapp/session-secret` so sessions survive restarts.
+FlowApp generates a random session secret on first start and persists it to `data/session-secret` so sessions survive restarts.
 
-For production, set it explicitly via environment variable:
+Override via environment variable (takes highest priority):
 
 ```bash
 SESSION_SECRET=your-32-byte-secret ./flowapp
 ```
 
-## Mail Notifications
+## Notifications
 
-Create `~/.config/flowapp/mail-config.json` to enable email notifications:
+FlowApp delivers notifications in two ways: **in-app** (bell icon, 🔔) and **email**. Both use the same target expressions in the workflow DSL.
+
+### Notification targets
+
+| Expression | In-app | Email |
+|---|---|---|
+| `role:finance` | All active users with App Role `finance` | Their email addresses |
+| `user:anna` or `user:anna@example.com` | That specific user | Their email address |
+| `anna@example.com` (bare email) | Only if a user with that address exists | Always sent |
+| Admins | Always receive a copy of every notification | — |
+
+Both `assign` and `notify` trigger notifications. `assign` additionally restricts who may complete the step.
+
+### In-app notifications
+
+All matched users see the notification under the 🔔 bell icon. The unread count is shown in the user menu. Notifications are stored in `data/notifications/{userID}.json`.
+
+### Email notifications
+
+Create `config/mail.json` to enable email delivery (or configure via Admin → Mail):
 
 **SMTP:**
 ```json
@@ -85,7 +121,7 @@ Create `~/.config/flowapp/mail-config.json` to enable email notifications:
 }
 ```
 
-Without a config file, notifications are written to the server log only.
+Without a mail config, notifications are in-app only and written to the server log.
 
 ## DSL Reference
 
@@ -103,7 +139,8 @@ section "Name"
     due 2d             # 2h | 3d | 1w — deadline starts when step becomes ready
     assign "user:anna"          # assign to a specific user (by name or email)
     assign "role:finance"       # assign to all users with this app role
-    notify "manager@company.com"  # send email when step fires
+    notify "role:finance"         # notify all users with this app role
+    notify "manager@example.com"   # or a bare email address
     needs "Step A", "Step B"    # AND-join: all must be done first
     schedule +3d        # activate 3 days after instance creation (also: +2w, +4h, 2025-12-01)
     item "Required item"        # checklist item — blocks completion until checked
@@ -125,8 +162,8 @@ section "Name"
 | `step` | section | A task. Name must be unique within the workflow |
 | `note` | step | Description text shown on the step card |
 | `due` | step | Relative deadline from when step becomes ready |
-| `assign` | step | Assign to `user:<name/email>` or `role:<rolename>` — restricts who can complete the step |
-| `notify` | step | Email address notified when the step fires; gate steps include the approval link |
+| `assign` | step | Assign to `user:<name/email>` or `role:<rolename>` — restricts who can complete the step, and sends an in-app notification + email to the assigned user(s) |
+| `notify` | step | Who to notify when the step fires — `role:<name>`, `user:<name/email>`, or a bare email. Gate steps include the approval link. Multiple `notify` lines allowed. |
 | `needs` | step | Comma-separated step names — all must be done/skipped before this activates |
 | `schedule` | step | Delay activation: relative (`+3d`, `+2w`, `+4h`) or absolute (`2025-12-01`) |
 | `item` | step | Checklist entry; `optional` makes it non-blocking (required by default) |
@@ -164,13 +201,13 @@ Variable values are entered when creating a new instance and substituted through
 step "Manager Approval"
   ask "Approve request?" -> "Approved", "Rejected"
   gate
-  notify "manager@company.com"
+  notify "role:management"
 ```
 
 When this step becomes ready:
 1. A one-time token is generated
-2. The notified address receives: `Approval link: /approve/{token}`
-3. The recipient opens the link — no login required
+2. All matched users receive the approval link via in-app notification and email
+3. The recipient opens `/approve/{token}` — no login required
 4. They click a button; the workflow continues on the chosen path
 
 Simple gate without routing (just a confirmation):
@@ -178,7 +215,7 @@ Simple gate without routing (just a confirmation):
 ```
 step "Final Sign-off"
   gate
-  notify "director@company.com"
+  notify "role:management"
 ```
 
 ## User Roles
@@ -227,6 +264,8 @@ Instances are displayed in three columns: **Todo**, **In Progress**, **Done**.
 | POST | `/instance/{id}/listitem/add` | user+ | Add dynamic checklist item |
 | POST | `/instance/{id}/listitem/checkall` | user+ | Check all items |
 | POST | `/reorder` | user+ | Drag & drop reorder |
+| GET | `/notifications` | user+ | In-app notification list |
+| POST | `/notifications/mark` | user+ | Mark notification read/unread |
 | GET | `/approve/{token}` | none | External approval page |
 | POST | `/approve/{token}` | none | Submit external approval |
 | GET | `/api/workflows` | none | JSON list of workflow definitions |

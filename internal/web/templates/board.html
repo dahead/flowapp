@@ -2,35 +2,15 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<link rel="stylesheet" href="/static/app.css">
-<link rel="stylesheet" href="/static/common.css">
+{{template "head-base" .}}
 <title>FlowApp</title>
-<script src="/static/theme-init.js"></script>
 <link rel="stylesheet" href="/static/board.css">
 </head>
 <body>
 <header>
   <h1>Flow<span>App</span></h1>
   {{if canWrite .CurrentUser}}
-  <form class="new-form" id="newInstForm" method="POST" action="/instance" onsubmit="return checkVarsRedirect(this)">
-                {{csrfField .CurrentUser}}
-    <select name="workflow" id="wfSelect" required>
-      <option value="" disabled selected>Workflow…</option>
-      {{range .Definitions}}<option value="{{.}}">{{.}}</option>{{end}}
-    </select>
-    <div style="display:flex;gap:0.3rem;align-items:center;">
-      <input type="text" name="title" id="titleInput" placeholder="Instance title…">
-      <button type="button" onclick="randomTitle()" title="Generate random name" style="background:var(--inp-bg);border:1px solid var(--inp-border);color:#aaa;border-radius:7px;padding:0.38rem 0.6rem;cursor:pointer;font-size:0.9rem;flex-shrink:0;">⚄</button>
-    </div>
-    <select name="priority">
-      <option value="">Priority…</option>
-      <option value="low">Low</option>
-      <option value="medium">Medium</option>
-      <option value="high">High</option>
-    </select>
-    <button type="submit">+ New</button>
-  </form>
+  <a class="btn-new-instance" href="/workflows">+ Neue Instanz</a>
   {{end}}
   {{template "menu-user" .}}
 </header>
@@ -448,22 +428,6 @@ function applyCLI() {
   window.location = '/?' + p.toString();
 }
 
-const _adj = ["golden","silbern","sanft","kühn","rasch","still","wild","klar","tief","weit","rein","frei","frisch","stark","weise","dunkel","hell","offen","scharf","leise","zart","schlicht","eben","grad","jung","alt","groß","klein","warm","kalt"];
-const _noun = ["Fuchs","Kranich","Kiefer","Eiche","Fluss","Stein","Morgen","Abend","Grat","Küste","Glut","Frost","Zeder","Bach","Fels","Hafen","Tal","Gipfel","Kamm","Hain","Moor","Klippe","Insel","Lichtung","Heide","Furt","Ebene","Bucht","Riff","Forst"];
-const _mod = ["alpha","beta","echo","delta","nova","null","prima","meta","kern","bogen","apex","basis","rand","knoten","fluss","gitter","pfad","kreis","tor","hub"];
-
-function randomTitle() {
-  const pick = arr => arr[Math.floor(Math.random() * arr.length)];
-  const style = Math.floor(Math.random() * 3);
-  let name;
-  if (style === 0)      name = pick(_adj) + " " + pick(_noun);
-  else if (style === 1) name = pick(_noun) + "-" + pick(_mod);
-  else                  name = pick(_adj) + " " + pick(_noun) + " " + pick(_mod);
-  const inp = document.getElementById('titleInput');
-  inp.value = name.charAt(0).toUpperCase() + name.slice(1);
-  inp.focus();
-}
-
 // ── Keyboard shortcuts ──
 document.addEventListener('keydown', function(e) {
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
@@ -477,27 +441,6 @@ document.addEventListener('keydown', function(e) {
   if (e.key === 'a' || e.key === 'A') location = '/archive';
   if (e.key === 'f' || e.key === 'F') toggleFilterBar();
 });
-
-// Workflow metadata cache
-let _workflows = [];
-fetch('/api/workflows')
-  .then(function(r) { return r.json(); })
-  .then(function(data) { _workflows = data; })
-  .catch(function(e) {});
-function checkVarsRedirect(form) {
-  var wfName = document.getElementById('wfSelect').value;
-  var wf = _workflows.find(function(w) { return w.name === wfName; });
-  if (wf && wf.vars && wf.vars.length > 0) {
-    var title    = document.getElementById('titleInput').value;
-    var priority = form.querySelector('[name="priority"]').value;
-    var url = '/instance/new/' + encodeURIComponent(wfName)
-            + '?title='    + encodeURIComponent(title)
-            + '&priority=' + encodeURIComponent(priority);
-    window.location.href = url;
-    return false;
-  }
-  return true;
-}
 
 const _colCollapsed = {};
 
@@ -540,18 +483,6 @@ function toggleCol(idx) {
   } catch(e) {}
 })();
 
-// toggleTheme() loaded from /static/theme-toggle.js
-function toggleUserMenu() {
-  document.getElementById('userMenuDropdown').classList.toggle('open');
-}
-document.addEventListener('click', e => {
-  const wrap = document.querySelector('.user-menu-wrap');
-  if (wrap && !wrap.contains(e.target)) {
-    const dd = document.getElementById('userMenuDropdown');
-    if (dd) dd.classList.remove('open');
-  }
-});
-
 function openHelp()  { document.getElementById('helpOverlay').classList.add('open'); }
 function closeHelp() { document.getElementById('helpOverlay').classList.remove('open'); }
 
@@ -590,7 +521,6 @@ function toggleFilterBar() {
     </div>
   </div>
 </div>
-<script src="/static/theme-toggle.js"></script>
 </body>
 </html>
 {{end}}

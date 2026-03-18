@@ -14,12 +14,15 @@ section "Planung"
     needs "Urlaubszeitraum festlegen"
     note "Schriftlich per Tool, E-Mail oder Formular — je nach Firma"
     due 2d
+    notify "role:management"
 
   step "Genehmigung"
     needs "Antrag stellen"
     ask "Urlaub genehmigt?" -> "Übergabe organisieren", "Alternativtermin suchen"
     gate
-    notify "vorgesetzte@firma.de"
+    assign "role:management"
+    notify "role:management"
+    notify "role:hr"
 
   step "Alternativtermin suchen"
     needs "Genehmigung"
@@ -47,4 +50,6 @@ section "Vorbereitung"
 
   step "Alles erledigt"
     needs "Übergabe organisieren", "Abwesenheit im Kalender eintragen"
+    notify "role:management"
+    notify "role:hr"
     note "Guten Urlaub! 🌴"

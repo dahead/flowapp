@@ -3,8 +3,8 @@ package mailer
 import (
 	"bytes"
 	"encoding/base64"
+	"flowapp/internal/logger"
 	"fmt"
-	"log"
 	"mime"
 	"mime/multipart"
 	"net/smtp"
@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 )
+
+var smtpLog = logger.New("mailer/smtp")
 
 // SMTPMailer sends mail via a standard SMTP relay.
 // Leave Username and Password empty for unauthenticated relay (e.g. internal mail servers).
@@ -31,7 +33,7 @@ func NewSMTPMailer(host string, port int, username, password string) *SMTPMailer
 // Send builds a MIME message and delivers it via SMTP.
 // Plain auth is used when Username is non-empty; otherwise the connection is unauthenticated.
 func (s *SMTPMailer) Send(msg Message) error {
-	log.Printf("[mailer/smtp] sending email — subject: %q to: %v", msg.Subject, msg.To)
+	smtpLog.Info("sending email — subject: %q to: %v", msg.Subject, msg.To)
 	var auth smtp.Auth
 	if s.Username != "" {
 		auth = smtp.PlainAuth("", s.Username, s.Password, s.Host)
@@ -39,17 +41,17 @@ func (s *SMTPMailer) Send(msg Message) error {
 
 	raw, err := buildMIME(msg)
 	if err != nil {
-		log.Printf("[mailer/smtp] build mime failed: %v", err)
+		smtpLog.Error("build mime failed: %v", err)
 		return fmt.Errorf("build mime: %w", err)
 	}
 
 	addr := fmt.Sprintf("%s:%d", s.Host, s.Port)
 	all := append(msg.To, append(msg.CC, msg.BCC...)...)
 	if err := smtp.SendMail(addr, auth, msg.From, all, raw); err != nil {
-		log.Printf("[mailer/smtp] send failed to %v via %s: %v", all, addr, err)
+		smtpLog.Error("send failed to %v via %s: %v", all, addr, err)
 		return err
 	}
-	log.Printf("[mailer/smtp] email sent successfully — subject: %q to: %v", msg.Subject, msg.To)
+	smtpLog.Info("email sent successfully — subject: %q to: %v", msg.Subject, msg.To)
 	return nil
 }
 

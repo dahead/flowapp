@@ -26,9 +26,22 @@ type Config struct {
 	GraphSenderUPN    string `json:"graph_sender_upn"` // mailbox UPN, e.g. "workflow@example.com"
 }
 
-// GetConfigPath returns the platform-appropriate path to the mail config file:
-// ~/.config/flowapp/mail-config.json
+// configPath is set at startup via SetConfigDir. Falls back to legacy ~/.config path.
+var configPath string
+
+// SetConfigDir sets the directory where mail.json is stored.
+// Call this from main() before LoadConfig or SaveMailConfig.
+func SetConfigDir(dir string) {
+	configPath = filepath.Join(dir, "mail.json")
+}
+
+// GetConfigPath returns the active mail config file path.
+// If SetConfigDir was called, returns that path; otherwise falls back to ~/.config/flowapp/mail-config.json.
 func GetConfigPath() (string, error) {
+	if configPath != "" {
+		return configPath, nil
+	}
+	// legacy fallback
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("get user home dir: %w", err)
@@ -36,55 +49,20 @@ func GetConfigPath() (string, error) {
 	return filepath.Join(home, ".config", "flowapp", "mail-config.json"), nil
 }
 
-// InitConfig creates an empty mail config file at the default path.
-// Returns an error if the file already exists.
-func InitConfig() error {
-	configPath, err := GetConfigPath()
-	if err != nil {
-		return err
-	}
-
-	// create parent directory if it does not exist
-	dir := filepath.Dir(configPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("create config directory %s: %w", dir, err)
-	}
-
-	// refuse to overwrite an existing config
-	if _, err := os.Stat(configPath); err == nil {
-		return fmt.Errorf("config file already exists: %s", configPath)
-	}
-
-	cfg := Config{}
-	data, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal empty config: %w", err)
-	}
-
-	if err := os.WriteFile(configPath, data, 0644); err != nil {
-		return fmt.Errorf("write config file %s: %w", configPath, err)
-	}
-
-	return nil
-}
-
-// LoadConfig reads and parses the mail config from the default path.
+// LoadConfig reads and parses the mail config from the active path.
 func LoadConfig() (*Config, error) {
-	configPath, err := GetConfigPath()
+	path, err := GetConfigPath()
 	if err != nil {
 		return nil, err
 	}
-
-	data, err := os.ReadFile(configPath)
+	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("read config file %s: %w", configPath, err)
+		return nil, fmt.Errorf("read config file %s: %w", path, err)
 	}
-
 	var cfg Config
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("unmarshal config: %w", err)
 	}
-
 	return &cfg, nil
 }
 

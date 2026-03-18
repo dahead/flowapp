@@ -2,11 +2,8 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<link rel="stylesheet" href="/static/app.css">
-<link rel="stylesheet" href="/static/common.css">
+{{template "head-base" .}}
 <title>Workflow Builder — FlowApp</title>
-<script src="/static/theme-init.js"></script>
 <link rel="stylesheet" href="/static/builder.css">
 </head>
 <body>
@@ -15,13 +12,6 @@
   <h1>Flow<span>App</span> Builder</h1>
   <div class="hf">
     <div class="hg"><label>Name</label><input id="wfName" type="text" placeholder="My Workflow" style="width:190px;"></div>
-    <div class="hg"><label>Priority</label>
-      <select id="wfPriority">
-        <option value="low">Low</option>
-        <option value="medium" selected>Medium</option>
-        <option value="high">High</option>
-      </select>
-    </div>
     <div class="hg"><label>Labels</label><input id="wfLabels" type="text" placeholder="finance, hr" style="width:140px;"></div>
   </div>
   {{template "menu-user" .}}
@@ -210,11 +200,9 @@ function mkDZ(afterIdx) {
 function q(s) { return '"' + s + '"'; }
 function generate() {
   var name     = document.getElementById('wfName').value.trim() || 'My Workflow';
-  var priority = document.getElementById('wfPriority').value;
   var labels   = document.getElementById('wfLabels').value.trim();
   var lines = [];
   lines.push('workflow ' + q(name));
-  lines.push('priority ' + priority);
   if (labels) labels.split(',').forEach(function(l){ l=l.trim(); if(l) lines.push('label ' + l); });
 
   // var declarations go at top
@@ -265,17 +253,6 @@ function download() {
   a.click();
 }
 
-// toggleTheme() loaded from /static/theme-toggle.js
-function toggleUserMenu() {
-  document.getElementById('userMenuDropdown').classList.toggle('open');
-}
-document.addEventListener('click', e => {
-  const wrap = document.querySelector('.user-menu-wrap');
-  if (wrap && !wrap.contains(e.target)) {
-    const dd = document.getElementById('userMenuDropdown');
-    if (dd) dd.classList.remove('open');
-  }
-});
 // ── DSL Parser (client-side) ──
 function parseWorkflow(text) {
   nodes = [];
@@ -292,8 +269,6 @@ function parseWorkflow(text) {
     switch (kw) {
       case 'workflow':
         document.getElementById('wfName').value = unquote(rest); break;
-      case 'priority':
-        document.getElementById('wfPriority').value = rest.toLowerCase(); break;
       case 'label':
         labels.push(rest.toLowerCase()); break;
       case 'section':
@@ -369,13 +344,12 @@ function initFileDrop() {
   });
 }
 
-['wfName','wfPriority','wfLabels'].forEach(id =>
+['wfName','wfLabels'].forEach(id =>
   document.getElementById(id).addEventListener('input', updatePreview));
 
 render();
 initFileDrop();
 </script>
-<script src="/static/theme-toggle.js"></script>
 </body>
 </html>
 {{end}}

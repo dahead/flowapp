@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"flowapp/internal/auth"
+	"flowapp/internal/logger"
 	"flowapp/internal/mailer"
 	"flowapp/internal/store"
 	"flowapp/internal/web"
@@ -12,43 +13,78 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 )
 
 func main() {
 	port := flag.Int("port", 8080, "HTTP listen port")
-	dataDir := flag.String("data", "data", "Directory for instance data files")
+	dataDir := flag.String("data", "data", "Directory for all runtime data (instances, users, notifications, session secret)")
+	configDir := flag.String("config", "config", "Directory for configuration files (mail.json)")
 	wfDir := flag.String("workflows", "workflows", "Directory for .workflow definition files")
+	debug := flag.Bool("debug", false, "Enable debug-level logging")
 	flag.Parse()
 
-	if err := os.MkdirAll("setup", 0700); err != nil {
-		log.Fatal("setup dir:", err)
-	}
-	users, err := auth.NewUserStore("setup/users.json")
-	if err != nil {
-		log.Fatal("userstore:", err)
+	// standard log package: date + time, no file/line prefix
+	log.SetFlags(log.Ldate | log.Ltime)
+
+	if *debug {
+		logger.SetDebug(true)
 	}
 
+	main := logger.New("main")
+
+	// ── Directories ───────────────────────────────────────────────────────────
+	for _, dir := range []string{*dataDir, *configDir} {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			main.Fatal("mkdir %s: %v", dir, err)
+		}
+	}
+
+	// ── Session secret ────────────────────────────────────────────────────────
+	auth.InitSessionSecret(*dataDir)
+
+	// ── Mail config ───────────────────────────────────────────────────────────
+	mailer.SetConfigDir(*configDir)
+
+	// ── User store ────────────────────────────────────────────────────────────
+	usersPath := filepath.Join(*dataDir, "users.json")
+	users, err := auth.NewUserStore(usersPath)
+	if err != nil {
+		main.Fatal("userstore: %v", err)
+	}
+
+	// ── Data store ────────────────────────────────────────────────────────────
 	s, err := store.New(*wfDir, *dataDir)
 	if err != nil {
-		log.Fatal("store:", err)
+		main.Fatal("store: %v", err)
 	}
 
+	// ── Mailer ────────────────────────────────────────────────────────────────
 	if cfg, err := mailer.LoadConfig(); err == nil {
 		if m, err := mailer.NewMailerFromConfig(cfg); err == nil {
 			s.SetMailer(mailer.EngineAdapter{M: m, From: cfg.From}, users.ResolveEmails)
-			log.Println("[main] mailer configured:", cfg.Type)
+			main.Info("mailer configured: %s", cfg.Type)
 		} else {
-			log.Println("[main] mailer init failed:", err)
+			main.Warn("mailer init failed: %v", err)
 		}
 	} else {
-		log.Println("[main] no mail config found — notifications are log-only")
+		main.Info("no mail config found — in-app notifications only")
 	}
 
-	h, err := web.New(s, users, "internal/web/templates/*.html")
+	// ── Notification fan-out index ────────────────────────────────────────────
+	refreshIndex := func() {
+		s.SetAdminIDs(users.AdminIDs())
+		s.SetEmailUserIndex(users.EmailUserIndex())
+	}
+	refreshIndex()
+	users.OnChange(refreshIndex)
+
+	// ── HTTP handler ──────────────────────────────────────────────────────────
+	h, err := web.New(s, users, "internal/web/templates/*.html", *dataDir)
 	if err != nil {
-		log.Fatal("templates:", err)
+		main.Fatal("templates: %v", err)
 	}
 
 	addr := fmt.Sprintf(":%d", *port)
@@ -57,24 +93,22 @@ func main() {
 
 	srv := &http.Server{Addr: addr, Handler: mux}
 
-	// start server in background
 	go func() {
-		log.Printf("FlowApp v2 running on http://localhost%s", addr)
+		main.Info("FlowApp running on http://localhost%s  (data=%s  config=%s)", addr, *dataDir, *configDir)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("listen: %v", err)
+			main.Fatal("listen: %v", err)
 		}
 	}()
 
-	// wait for SIGINT or SIGTERM
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
-	log.Println("[main] shutdown signal received — draining requests...")
+	main.Info("shutdown signal received — draining requests...")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {
-		log.Printf("[main] forced shutdown: %v", err)
+		main.Error("forced shutdown: %v", err)
 	}
-	log.Println("[main] server stopped cleanly")
+	main.Info("server stopped cleanly")
 }

@@ -4,12 +4,14 @@ import (
 	"encoding/json"
 	"flowapp/internal/auth"
 	"flowapp/internal/engine"
+	"flowapp/internal/logger"
 	"flowapp/internal/mailer"
+	"flowapp/internal/notifications"
 	"flowapp/internal/store"
 	"fmt"
 	"html/template"
-	"log"
 	"net/http"
+	"net/url"
 	"slices"
 	"sort"
 	"strconv"
@@ -17,13 +19,23 @@ import (
 	"time"
 )
 
+var webLog = logger.New("web")
+
 // Handler holds all HTTP handler state: the data store, user store,
 // compiled templates, and the login rate limiter.
 type Handler struct {
-	store     *store.Store
-	users     *auth.UserStore
-	templates *template.Template
-	loginRL   *auth.RateLimiter
+	store      *store.Store
+	users      *auth.UserStore
+	templates  *template.Template
+	loginRL    *auth.RateLimiter
+	dataDir    string
+	notifStore interface {
+		List(userID string) []notifications.Notification
+		UnreadCount(userID string) int
+		MarkRead(userID, notifID string)
+		MarkUnread(userID, notifID string)
+		MarkAllRead(userID string)
+	}
 }
 
 type ctxKey string
@@ -32,7 +44,7 @@ const ctxUserKey ctxKey = "user"
 
 // New creates a Handler, compiling all HTML templates from the given glob pattern
 // and registering custom template functions used by the views.
-func New(s *store.Store, users *auth.UserStore, tmplGlob string) (*Handler, error) {
+func New(s *store.Store, users *auth.UserStore, tmplGlob string, dataDir string) (*Handler, error) {
 	tmpl, err := template.New("").Funcs(template.FuncMap{
 		// csrfField renders a hidden CSRF input for the given user ID.
 		// Usage in templates: {{csrfField .CurrentUser}}
@@ -44,6 +56,7 @@ func New(s *store.Store, users *auth.UserStore, tmplGlob string) (*Handler, erro
 			return template.HTML(`<input type="hidden" name="` + auth.CSRFFieldName() + `" value="` + token + `">`)
 		},
 		"lower":               strings.ToLower,
+		"urlenc":              url.PathEscape,
 		"dueLabel":            func(s *engine.StepState) string { return s.DueLabel() },
 		"isOverdue":           func(s *engine.StepState) bool { return s.IsOverdue() },
 		"requiredListBlocked": func(s *engine.StepState) bool { return s.RequiredListBlocked() },
@@ -145,20 +158,24 @@ func New(s *store.Store, users *auth.UserStore, tmplGlob string) (*Handler, erro
 		"isPage": func(page, current string) bool { return page == current },
 		// canDoStep returns true if the user may act on a step.
 		// Admins and steps without an assign field are always allowed.
-		// Otherwise the user must match the assign expression.
+		// Otherwise the user must match at least one assign expression.
 		"canDoStep": func(u *auth.User, s *engine.StepState) bool {
 			if u == nil || !u.CanWrite() {
 				return false
 			}
-			if u.CanAdmin() || s.Assign == "" {
+			if u.CanAdmin() || len(s.Assign) == 0 {
 				return true
 			}
-			if s.Assign == "user:"+u.Name || s.Assign == "user:"+u.Email || s.Assign == u.Name || s.Assign == u.Email {
-				return true
-			}
-			if strings.HasPrefix(s.Assign, "role:") {
-				roleName := strings.TrimPrefix(s.Assign, "role:")
-				return slices.Contains(u.AppRoles, roleName)
+			for _, expr := range s.Assign {
+				if expr == "user:"+u.Name || expr == "user:"+u.Email || expr == u.Name || expr == u.Email {
+					return true
+				}
+				if strings.HasPrefix(expr, "role:") {
+					roleName := strings.TrimPrefix(expr, "role:")
+					if slices.Contains(u.AppRoles, roleName) {
+						return true
+					}
+				}
 			}
 			return false
 		},
@@ -166,13 +183,18 @@ func New(s *store.Store, users *auth.UserStore, tmplGlob string) (*Handler, erro
 	if err != nil {
 		return nil, err
 	}
-	return &Handler{store: s, users: users, templates: tmpl, loginRL: auth.NewRateLimiter()}, nil
+	return &Handler{store: s, users: users, templates: tmpl, loginRL: auth.NewRateLimiter(), dataDir: dataDir, notifStore: s.Notifications()}, nil
 }
 
 // ── Auth middleware ────────────────────────────────────────────────────────────
 
-// currentUser reads the session cookie and returns the authenticated user,
-// or nil if the session is missing, invalid, or the user is inactive.
+// unreadCount returns the number of unread notifications for the current user, or 0 if not logged in.
+func (h *Handler) unreadCount(u *auth.User) int {
+	if u == nil || h.notifStore == nil {
+		return 0
+	}
+	return h.notifStore.UnreadCount(u.ID)
+}
 func (h *Handler) currentUser(r *http.Request) *auth.User {
 	id, err := auth.GetSessionUserID(r)
 	if err != nil {
@@ -233,7 +255,7 @@ func (h *Handler) requireCSRF(next http.HandlerFunc) http.HandlerFunc {
 		r.ParseForm()
 		token := auth.CSRFTokenFromRequest(r)
 		if err := auth.ValidateCSRFToken(token, u.ID); err != nil {
-			log.Printf("[csrf] rejected request to %s: %v", r.URL.Path, err)
+			webLog.Warn("CSRF rejected request to %s: %v", r.URL.Path, err)
 			h.renderError(w, r, "Invalid or expired form token. Please go back and try again.", http.StatusForbidden)
 			return
 		}
@@ -254,8 +276,12 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /logout", h.requireCSRF(h.logout))
 	mux.HandleFunc("GET /profile", h.requireAuth(h.profilePage))
 	mux.HandleFunc("POST /profile", h.requireWrite(h.requireCSRF(h.profileSave)))
+
+	mux.HandleFunc("GET /notifications", h.requireAuth(h.notificationsPage))
+	mux.HandleFunc("POST /notifications/mark", h.requireAuth(h.requireCSRF(h.notificationsMark)))
 	// main app (auth required)
 	mux.HandleFunc("GET /", h.requireAuth(h.board))
+	mux.HandleFunc("GET /workflows", h.requireAuth(h.workflowsPage))
 	mux.HandleFunc("GET /builder", h.requireAuth(h.builder))
 	mux.HandleFunc("GET /archive", h.requireAuth(h.archive))
 	mux.HandleFunc("GET /instance/{id}", h.requireAuth(h.instanceDetail))
@@ -286,6 +312,8 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /admin/users/{id}/edit", h.requireAdmin(h.requireCSRF(h.adminEditUser)))
 	mux.HandleFunc("POST /admin/users/{id}/delete", h.requireAdmin(h.requireCSRF(h.adminDeleteUser)))
 	mux.HandleFunc("POST /admin/users/{id}/password", h.requireAdmin(h.requireCSRF(h.adminResetPassword)))
+	mux.HandleFunc("GET /admin/system", h.requireAdmin(h.adminSystem))
+	mux.HandleFunc("POST /admin/full-reset", h.requireAdmin(h.requireCSRF(h.fullReset)))
 	mux.HandleFunc("GET /admin/mail", h.requireAdmin(h.adminMailPage))
 	mux.HandleFunc("POST /admin/mail", h.requireAdmin(h.requireCSRF(h.adminMailSave)))
 	mux.HandleFunc("POST /admin/mail/test", h.requireAdmin(h.requireCSRF(h.adminMailTest)))
@@ -371,11 +399,11 @@ func (h *Handler) loginSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 	u, err := h.users.Authenticate(email, password)
 	if err != nil {
-		log.Printf("[web] login failed for %s: %v", email, err)
+		webLog.Warn("login failed for %s: %v", email, err)
 		h.render(w, r, "login.html", map[string]string{"Error": "Ungültige E-Mail oder Passwort.", "Next": next})
 		return
 	}
-	log.Printf("[web] login successful for %s (%s)", u.ID, email)
+	webLog.Info("login successful for %s (%s)", u.ID, email)
 	h.loginRL.Reset(r) // clear rate-limit counter on successful login
 	auth.SetSession(w, u.ID)
 	http.Redirect(w, r, next, http.StatusSeeOther)
@@ -384,10 +412,55 @@ func (h *Handler) loginSubmit(w http.ResponseWriter, r *http.Request) {
 // logout clears the session cookie and redirects to /login.
 func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {
 	if u := h.currentUser(r); u != nil {
-		log.Printf("[web] logout for user %s (%s)", u.ID, u.Email)
+		webLog.Info("logout for user %s (%s)", u.ID, u.Email)
 	}
 	auth.ClearSession(w)
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
+}
+
+// workflowCard is the view model for a single workflow on the /workflows selection page.
+type workflowCard struct {
+	Name      string
+	Priority  string
+	Labels    []string
+	Vars      []string
+	StepCount int
+}
+
+// workflowsData is the view model for the workflow selection page.
+type workflowsData struct {
+	Workflows   []workflowCard
+	CurrentUser *auth.User
+	Page        string
+	UnreadCount int
+}
+
+// workflowsPage renders the workflow selection / new-instance page.
+func (h *Handler) workflowsPage(w http.ResponseWriter, r *http.Request) {
+	u := h.currentUser(r)
+	defs := h.store.Definitions()
+	// sort alphabetically for stable display
+	sort.Slice(defs, func(i, j int) bool { return defs[i].Name < defs[j].Name })
+	cards := make([]workflowCard, 0, len(defs))
+	for _, d := range defs {
+		steps := 0
+		for _, sec := range d.Sections {
+			steps += len(sec.Steps)
+		}
+		cards = append(cards, workflowCard{
+			Name:      d.Name,
+			Priority:  d.Priority,
+			Labels:    d.Labels,
+			Vars:      d.Vars,
+			StepCount: steps,
+		})
+	}
+	h.render(w, r, "workflows.html", workflowsData{
+		Workflows:   cards,
+		CurrentUser: u,
+		Page:        "workflows",
+		UnreadCount: h.unreadCount(u),
+	})
 }
 
 // ── Board ─────────────────────────────────────────────────────────────────────
@@ -412,7 +485,6 @@ type column struct {
 // boardData is the view model passed to the board template.
 type boardData struct {
 	Columns          []column
-	Definitions      []string
 	AllLabels        []string
 	FilterQ          string
 	FilterPriorities []string
@@ -424,9 +496,52 @@ type boardData struct {
 	Flash            string
 	CurrentUser      *auth.User
 	Page             string
+	UnreadCount      int
 }
 
-// board renders the main Kanban board, applying any active filters from query parameters.
+// newInstanceData is the view model for the new-instance prompt page.
+type newInstanceData struct {
+	WorkflowName string
+	Title        string
+	Priority     string
+	Vars         []string
+	CurrentUser  *auth.User
+	Page         string
+	UnreadCount  int
+}
+
+// archiveData is the view model for the archive page.
+type archiveData struct {
+	Instances   []*engine.Instance
+	FilterQ     string
+	CurrentUser *auth.User
+	Page        string
+	UnreadCount int
+}
+
+// builderData is the view model for the workflow builder page.
+type builderData struct {
+	CurrentUser *auth.User
+	Page        string
+	UnreadCount int
+}
+
+// profileData is the view model for the profile page.
+type profileData struct {
+	CurrentUser *auth.User
+	Flash       string
+	Page        string
+	UnreadCount int
+}
+
+// notificationsData is the view model for the notifications page.
+type notificationsData struct {
+	CurrentUser   *auth.User
+	Notifications []notifications.Notification
+	UnreadCount   int
+	Page          string
+}
+
 func (h *Handler) board(w http.ResponseWriter, r *http.Request) {
 	u := h.currentUser(r)
 	q := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
@@ -515,24 +630,18 @@ func (h *Handler) board(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	defs := h.store.Definitions()
-	var defNames []string
-	for _, d := range defs {
-		defNames = append(defNames, d.Name)
-	}
-	sort.Strings(defNames)
 	allLabels := h.store.AllLabels()
 	sort.Strings(allLabels)
 
 	flash := getFlash(w, r)
 	h.render(w, r, "board.html", boardData{
-		Columns:     []column{*cols["Todo"], *cols["In Progress"], *cols["Done"]},
-		Definitions: defNames, AllLabels: allLabels,
+		Columns:   []column{*cols["Todo"], *cols["In Progress"], *cols["Done"]},
+		AllLabels: allLabels,
 
 		FilterQ: r.URL.Query().Get("q"), FilterPriorities: filterPriorities,
 		FilterLabels: filterLabels, FilterDue: filterDue, FilterCreated: filterCreated,
 		FilterSort: filterSort, FilterAssign: filterAssign,
-		Flash: flash, CurrentUser: u, Page: "board",
+		Flash: flash, CurrentUser: u, Page: "board", UnreadCount: h.unreadCount(u),
 	})
 }
 
@@ -562,14 +671,7 @@ func (h *Handler) newInstancePrompt(w http.ResponseWriter, r *http.Request) {
 	defs := h.store.Definitions()
 	for _, d := range defs {
 		if d.Name == wfName && len(d.Vars) > 0 {
-			h.render(w, r, "new_instance.html", struct {
-				WorkflowName string
-				Title        string
-				Priority     string
-				Vars         []string
-				CurrentUser  *auth.User
-				Page         string
-			}{wfName, title, priority, d.Vars, h.currentUser(r), ""})
+			h.render(w, r, "new_instance.html", newInstanceData{WorkflowName: wfName, Title: title, Priority: priority, Vars: d.Vars, CurrentUser: h.currentUser(r), Page: "", UnreadCount: h.unreadCount(h.currentUser(r))})
 			return
 		}
 	}
@@ -595,20 +697,12 @@ func (h *Handler) archive(w http.ResponseWriter, r *http.Request) {
 	sort.Slice(filtered, func(i, j int) bool {
 		return filtered[i].UpdatedAt.After(filtered[j].UpdatedAt)
 	})
-	h.render(w, r, "archive.html", struct {
-		Instances   []*engine.Instance
-		FilterQ     string
-		CurrentUser *auth.User
-		Page        string
-	}{filtered, r.URL.Query().Get("q"), u, "archive"})
+	h.render(w, r, "archive.html", archiveData{Instances: filtered, FilterQ: r.URL.Query().Get("q"), CurrentUser: u, Page: "archive", UnreadCount: h.unreadCount(u)})
 }
 
 // builder renders the visual workflow builder page.
 func (h *Handler) builder(w http.ResponseWriter, r *http.Request) {
-	h.render(w, r, "builder.html", struct {
-		CurrentUser *auth.User
-		Page        string
-	}{h.currentUser(r), "builder"})
+	h.render(w, r, "builder.html", builderData{CurrentUser: h.currentUser(r), Page: "builder", UnreadCount: h.unreadCount(h.currentUser(r))})
 }
 
 // ── Instance ──────────────────────────────────────────────────────────────────
@@ -621,6 +715,7 @@ type instanceData struct {
 	PrevID      string
 	NextID      string
 	Page        string
+	UnreadCount int
 }
 
 // instanceDetail renders the detail view for a single workflow instance.
@@ -651,7 +746,7 @@ func (h *Handler) instanceDetail(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
-	h.render(w, r, "instance.html", instanceData{inst, getFlash(w, r), h.currentUser(r), prevID, nextID, "instance"})
+	h.render(w, r, "instance.html", instanceData{Instance: inst, Flash: getFlash(w, r), CurrentUser: h.currentUser(r), PrevID: prevID, NextID: nextID, Page: "instance", UnreadCount: h.unreadCount(h.currentUser(r))})
 }
 
 // createInstance handles the POST form that creates a new workflow instance.
@@ -902,19 +997,33 @@ func (h *Handler) approvalSubmit(w http.ResponseWriter, r *http.Request) {
 
 // ── Admin ─────────────────────────────────────────────────────────────────────
 
+// systemData is the view model for the system administration page.
+type systemData struct {
+	CurrentUser *auth.User
+	Page        string
+	UnreadCount int
+}
+
+// adminSystem renders the system administration page (danger zone).
+func (h *Handler) adminSystem(w http.ResponseWriter, r *http.Request) {
+	u := h.currentUser(r)
+	h.render(w, r, "admin_system.html", systemData{CurrentUser: u, Page: "system", UnreadCount: h.unreadCount(u)})
+}
+
 // adminData is the view model for the user administration page.
 type adminData struct {
 	Users       []*auth.User
 	Flash       string
 	CurrentUser *auth.User
 	Page        string
+	UnreadCount int
 }
 
 // adminUsers renders the user administration list.
 func (h *Handler) adminUsers(w http.ResponseWriter, r *http.Request) {
 	users := h.users.List()
 	sort.Slice(users, func(i, j int) bool { return users[i].CreatedAt.Before(users[j].CreatedAt) })
-	h.render(w, r, "admin.html", adminData{Users: users, Flash: getFlash(w, r), CurrentUser: h.currentUser(r), Page: "users"})
+	h.render(w, r, "admin.html", adminData{Users: users, Flash: getFlash(w, r), CurrentUser: h.currentUser(r), Page: "users", UnreadCount: h.unreadCount(h.currentUser(r))})
 }
 
 // adminCreateUser handles the form submission to create a new user.
@@ -989,6 +1098,7 @@ type mailAdminData struct {
 	TestOK      bool
 	CurrentUser *auth.User
 	Page        string
+	UnreadCount int
 }
 
 // adminMailPage renders the mail configuration page.
@@ -998,6 +1108,7 @@ func (h *Handler) adminMailPage(w http.ResponseWriter, r *http.Request) {
 		Flash:       getFlashOK(w, r),
 		CurrentUser: h.currentUser(r),
 		Page:        "mail",
+		UnreadCount: h.unreadCount(h.currentUser(r)),
 	})
 }
 
@@ -1020,7 +1131,7 @@ func (h *Handler) adminMailSave(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := h.store.SaveMailConfig(cfg, h.users.ResolveEmails); err != nil {
 		h.render(w, r, "admin_mail.html", mailAdminData{
-			Config: cfg, Error: err.Error(), CurrentUser: h.currentUser(r),
+			Config: cfg, Error: err.Error(), CurrentUser: h.currentUser(r), UnreadCount: h.unreadCount(h.currentUser(r)),
 		})
 		return
 	}
@@ -1034,14 +1145,14 @@ func (h *Handler) adminMailTest(w http.ResponseWriter, r *http.Request) {
 	cfg := h.store.GetMailConfig()
 	if cfg.Type == "" {
 		h.render(w, r, "admin_mail.html", mailAdminData{
-			Config: cfg, Error: "No mail config saved yet.", CurrentUser: u,
+			Config: cfg, Error: "No mail config saved yet.", CurrentUser: u, UnreadCount: h.unreadCount(u),
 		})
 		return
 	}
 	m, err := mailer.NewMailerFromConfig(cfg)
 	if err != nil {
 		h.render(w, r, "admin_mail.html", mailAdminData{
-			Config: cfg, Error: "Mailer init failed: " + err.Error(), CurrentUser: u,
+			Config: cfg, Error: "Mailer init failed: " + err.Error(), CurrentUser: u, UnreadCount: h.unreadCount(u),
 		})
 		return
 	}
@@ -1054,12 +1165,60 @@ func (h *Handler) adminMailTest(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := adapter.M.Send(testMsg); err != nil {
 		h.render(w, r, "admin_mail.html", mailAdminData{
-			Config: cfg, Error: "Send failed: " + err.Error(), CurrentUser: u,
+			Config: cfg, Error: "Send failed: " + err.Error(), CurrentUser: u, UnreadCount: h.unreadCount(u),
 		})
 		return
 	}
 	flashSuccess(w, r, "Test email sent to "+u.Email)
 	http.Redirect(w, r, "/admin/mail", http.StatusSeeOther)
+}
+
+// fullReset wipes all instances, notifications, users, and rotates the session secret.
+// After the reset the user is logged out and redirected to /setup.
+func (h *Handler) fullReset(w http.ResponseWriter, r *http.Request) {
+	webLog.Info("FullReset initiated by user %s", h.currentUser(r).Email)
+	if err := h.store.FullReset(); err != nil {
+		webLog.Error("FullReset store error: %v", err)
+	}
+	if err := h.users.FullReset(); err != nil {
+		webLog.Error("FullReset users error: %v", err)
+	}
+	if err := auth.DeleteSessionSecret(h.dataDir); err != nil {
+		webLog.Error("FullReset session secret error: %v", err)
+	}
+	auth.ClearSession(w)
+	http.Redirect(w, r, "/setup", http.StatusSeeOther)
+}
+
+// ── Notifications ─────────────────────────────────────────────────────────────
+
+// notificationsPage renders the in-app notifications list for the current user.
+func (h *Handler) notificationsPage(w http.ResponseWriter, r *http.Request) {
+	u := h.currentUser(r)
+	list := h.notifStore.List(u.ID)
+	h.render(w, r, "notifications.html", notificationsData{
+		CurrentUser:   u,
+		Notifications: list,
+		UnreadCount:   h.unreadCount(u),
+		Page:          "notifications",
+	})
+}
+
+// notificationsMark handles read/unread toggle and mark-all-read actions.
+func (h *Handler) notificationsMark(w http.ResponseWriter, r *http.Request) {
+	u := h.currentUser(r)
+	r.ParseForm()
+	action := r.FormValue("action")
+	id := r.FormValue("id")
+	switch action {
+	case "read":
+		h.notifStore.MarkRead(u.ID, id)
+	case "unread":
+		h.notifStore.MarkUnread(u.ID, id)
+	case "all_read":
+		h.notifStore.MarkAllRead(u.ID)
+	}
+	http.Redirect(w, r, "/notifications", http.StatusSeeOther)
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -1204,24 +1363,26 @@ func priorityVal(p string) int {
 func matchAssignFilter(inst *engine.Instance, filter string, u *auth.User) bool {
 	for _, sec := range inst.Sections {
 		for _, s := range sec.Steps {
-			if s.Assign == "" {
+			if len(s.Assign) == 0 {
 				continue
 			}
 			if string(s.Status) == "done" || string(s.Status) == "skipped" || string(s.Status) == "ended" {
 				continue
 			}
-			if filter == "me" && u != nil {
-				if s.Assign == "user:"+u.Name || s.Assign == "user:"+u.Email || s.Assign == u.Name || s.Assign == u.Email {
-					return true
-				}
-				if strings.HasPrefix(s.Assign, "role:") {
-					roleName := strings.TrimPrefix(s.Assign, "role:")
-					if slices.Contains(u.AppRoles, roleName) {
+			for _, expr := range s.Assign {
+				if filter == "me" && u != nil {
+					if expr == "user:"+u.Name || expr == "user:"+u.Email || expr == u.Name || expr == u.Email {
 						return true
 					}
+					if strings.HasPrefix(expr, "role:") {
+						roleName := strings.TrimPrefix(expr, "role:")
+						if slices.Contains(u.AppRoles, roleName) {
+							return true
+						}
+					}
+				} else if expr == filter {
+					return true
 				}
-			} else if s.Assign == filter {
-				return true
 			}
 		}
 	}
@@ -1240,20 +1401,24 @@ func hasLabel(labels []string, filter string) bool {
 
 // userCanDoStep returns true if the user may act on the given step.
 // Admins and unassigned steps are always permitted.
-// Otherwise the user must match the assign expression by name, email, or app_role.
+// Otherwise the user must match at least one assign expression.
 func userCanDoStep(u *auth.User, s *engine.StepState) bool {
 	if u == nil || !u.CanWrite() {
 		return false
 	}
-	if u.CanAdmin() || s.Assign == "" {
+	if u.CanAdmin() || len(s.Assign) == 0 {
 		return true
 	}
-	if s.Assign == "user:"+u.Name || s.Assign == "user:"+u.Email || s.Assign == u.Name || s.Assign == u.Email {
-		return true
-	}
-	if strings.HasPrefix(s.Assign, "role:") {
-		roleName := strings.TrimPrefix(s.Assign, "role:")
-		return slices.Contains(u.AppRoles, roleName)
+	for _, expr := range s.Assign {
+		if expr == "user:"+u.Name || expr == "user:"+u.Email || expr == u.Name || expr == u.Email {
+			return true
+		}
+		if strings.HasPrefix(expr, "role:") {
+			roleName := strings.TrimPrefix(expr, "role:")
+			if slices.Contains(u.AppRoles, roleName) {
+				return true
+			}
+		}
 	}
 	return false
 }
@@ -1263,11 +1428,7 @@ func userCanDoStep(u *auth.User, s *engine.StepState) bool {
 // profilePage renders the current user's profile page.
 func (h *Handler) profilePage(w http.ResponseWriter, r *http.Request) {
 	u := h.currentUser(r)
-	h.render(w, r, "profile.html", struct {
-		CurrentUser *auth.User
-		Flash       string
-		Page        string
-	}{u, getFlash(w, r), "profile"})
+	h.render(w, r, "profile.html", profileData{CurrentUser: u, Flash: getFlash(w, r), Page: "profile", UnreadCount: h.unreadCount(u)})
 }
 
 // profileSave handles the profile edit form, updating the user's display name

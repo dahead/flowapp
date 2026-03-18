@@ -18,7 +18,7 @@ section "Planung"
     needs "Ausflug vorschlagen"
     ask "Ausflug genehmigt?" -> "Eltern informieren", "Überarbeiten"
     gate
-    notify "schulleitung@schule.de"
+    notify "role:schulleitung"
 
   step "Überarbeiten"
     needs "Schulleitung genehmigt"
@@ -29,7 +29,7 @@ section "Organisation"
   step "Eltern informieren"
     needs "Schulleitung genehmigt"
     assign "role:lehrer"
-    notify "elternbeirat@schule.de"
+    notify "role:elternbeirat"
     item! "Elternbrief verschickt"
     item! "Einverständniserklärung beigefügt"
 

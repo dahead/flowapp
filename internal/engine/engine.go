@@ -3,13 +3,16 @@ package engine
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"flowapp/internal/dsl"
+	"flowapp/internal/logger"
 	"fmt"
-	"log"
 	"strconv"
 	"strings"
 	"time"
 )
+
+var engineLog = logger.New("engine")
 
 // Status represents the lifecycle state of a workflow instance or individual step.
 type Status string
@@ -74,8 +77,9 @@ type Instance struct {
 
 	// Runtime-only fields — not persisted to JSON.
 	// Injected by the Store before any engine method is called on a loaded instance.
-	MailSender    Mailer        `json:"-"`
-	EmailResolver EmailResolver `json:"-"`
+	MailSender    Mailer           `json:"-"`
+	EmailResolver EmailResolver    `json:"-"`
+	NotifySink    NotificationSink `json:"-"`
 }
 
 // SectionState groups a set of steps under a named section.
@@ -89,8 +93,8 @@ type StepState struct {
 	Name            string     `json:"name"`
 	Status          Status     `json:"status"`
 	Note            string     `json:"note,omitempty"`
-	Notify          string     `json:"notify,omitempty"`      // email address to notify when step fires
-	Assign          string     `json:"assign,omitempty"`      // assign expression: "user:<n>", "role:<r>", email
+	Notify          []string   `json:"notify,omitempty"`      // roles/addresses to notify when step fires
+	Assign          []string   `json:"assign,omitempty"`      // assign expressions — user must match any one
 	Schedule        string     `json:"schedule,omitempty"`    // raw schedule expression
 	ScheduleAt      *time.Time `json:"schedule_at,omitempty"` // resolved activation timestamp
 	Due             string     `json:"due,omitempty"`
@@ -107,6 +111,44 @@ type StepState struct {
 	Ends            bool       `json:"ends,omitempty"`             // true: completing this step ends the workflow
 	ChosenIdx       int        `json:"chosen_idx"`                 // ask/gate routing choice; -1 = not yet chosen
 	OverdueNotified bool       `json:"overdue_notified,omitempty"` // true once an overdue notification has been sent
+}
+
+// UnmarshalJSON provides backwards-compatible deserialization for StepState.
+// Old instances stored Notify/Assign as a single string; new format is []string.
+func (s *StepState) UnmarshalJSON(data []byte) error {
+	// Use an alias to avoid infinite recursion
+	type Alias StepState
+	aux := &struct {
+		Notify json.RawMessage `json:"notify,omitempty"`
+		Assign json.RawMessage `json:"assign,omitempty"`
+		*Alias
+	}{Alias: (*Alias)(s)}
+
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+
+	s.Notify = unmarshalStringOrSlice(aux.Notify)
+	s.Assign = unmarshalStringOrSlice(aux.Assign)
+	return nil
+}
+
+// unmarshalStringOrSlice handles both "foo" and ["foo","bar"] JSON values.
+func unmarshalStringOrSlice(raw json.RawMessage) []string {
+	if len(raw) == 0 {
+		return nil
+	}
+	// try array first
+	var slice []string
+	if err := json.Unmarshal(raw, &slice); err == nil {
+		return slice
+	}
+	// fall back to string (old format)
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil && s != "" {
+		return []string{s}
+	}
+	return nil
 }
 
 // ── Schedule ──────────────────────────────────────────────────────────────────
@@ -151,7 +193,7 @@ func setScheduleAt(step *StepState, instanceStart time.Time) {
 	}
 	t, err := parseSchedule(step.Schedule, instanceStart)
 	if err != nil {
-		log.Printf("[engine] schedule parse error for step '%s': %v", step.Name, err)
+		engineLog.Warn("schedule parse error for step %q: %v", step.Name, err)
 		return
 	}
 	step.ScheduleAt = &t
@@ -251,7 +293,7 @@ func generateToken() string {
 // m and r are optional: pass nil for both in tests or when no mailer is configured.
 // Initial activation (steps with no unmet needs) runs immediately, so notifications
 // fire correctly for steps that become ready at creation time.
-func NewInstance(id, title string, wf *dsl.Workflow, m Mailer, r EmailResolver) *Instance {
+func NewInstance(id, title string, wf *dsl.Workflow, m Mailer, r EmailResolver, sink NotificationSink) *Instance {
 	now := time.Now()
 	inst := &Instance{
 		ID: id, WorkflowName: wf.Name, Title: title,
@@ -260,6 +302,7 @@ func NewInstance(id, title string, wf *dsl.Workflow, m Mailer, r EmailResolver) 
 		Vars:          make(map[string]string),
 		MailSender:    m,
 		EmailResolver: r,
+		NotifySink:    sink,
 	}
 	if inst.Priority == "" {
 		inst.Priority = "medium"
@@ -321,7 +364,9 @@ func (inst *Instance) ApplyVars(vars map[string]string) {
 	inst.Title = substituteVars(inst.Title, vars)
 	inst.allSteps(func(s *StepState) {
 		s.Note = substituteVars(s.Note, vars)
-		s.Notify = substituteVars(s.Notify, vars)
+		for i, n := range s.Notify {
+			s.Notify[i] = substituteVars(n, vars)
+		}
 	})
 }
 
@@ -354,7 +399,7 @@ func (inst *Instance) activateReady(now time.Time) {
 			if s.ScheduleAt != nil && now.Before(*s.ScheduleAt) {
 				return // not yet time
 			}
-			log.Printf("[engine] activating step '%s' (was pending)", s.Name)
+			engineLog.Debug("activating step %q (was pending)", s.Name)
 			inst.activate(s, now)
 			changed = true
 		})
@@ -377,7 +422,7 @@ func (inst *Instance) TickScheduled() bool {
 		if !inst.needsSatisfied(s) {
 			return
 		}
-		log.Printf("[engine] scheduled activation of step '%s'", s.Name)
+		engineLog.Debug("scheduled activation of step %q", s.Name)
 		inst.activate(s, now)
 		activated = true
 	})
@@ -405,26 +450,45 @@ func (inst *Instance) TickOverdue() bool {
 		fired = true
 		m, r := inst.MailSender, inst.EmailResolver
 		scopy := *s
-		// notify the assigned user or the notify address
-		target := scopy.Assign
-		if target == "" {
-			target = scopy.Notify
-		}
-		if target == "" || m == nil || r == nil {
-			log.Printf("[engine] overdue: step '%s' in '%s' is overdue (no notification target)", s.Name, inst.Title)
+		// collect all notification targets: assign + notify
+		targets := append(append([]string{}, scopy.Assign...), scopy.Notify...)
+		if len(targets) == 0 {
+			engineLog.Warn("overdue: step %q in %q — no notification target", s.Name, inst.Title)
 			return
 		}
-		log.Printf("[engine] overdue: firing notification for step '%s' in '%s'", s.Name, inst.Title)
+		engineLog.Info("overdue: firing notification for step %q in %q", s.Name, inst.Title)
+		sink := inst.NotifySink
 		go func() {
-			to := r(target)
-			if len(to) == 0 {
-				return
+			var allTo []string
+			for _, target := range targets {
+				if r != nil {
+					allTo = append(allTo, r(target)...)
+				}
 			}
-			subject := fmt.Sprintf("[flowapp] ⚠ Overdue: %s — %s", scopy.Name, inst.Title)
-			plain := fmt.Sprintf("Step %q in workflow %q is overdue.\n\nInstance: %s\nWorkflow: %s\nStep: %s\n",
-				scopy.Name, inst.WorkflowName, inst.Title, inst.WorkflowName, scopy.Name)
-			if err := m.Send(MailMessage{To: to, Subject: subject, PlainBody: plain}); err != nil {
-				log.Printf("[engine] overdue mail error: %v", err)
+			// deduplicate
+			seen := map[string]bool{}
+			var to []string
+			for _, addr := range allTo {
+				if !seen[addr] {
+					seen[addr] = true
+					to = append(to, addr)
+				}
+			}
+			if len(to) > 0 && m != nil {
+				subject := fmt.Sprintf("[flowapp] ⚠ Overdue: %s — %s", scopy.Name, inst.Title)
+				plain := fmt.Sprintf("Step %q in workflow %q is overdue.\n\nInstance: %s\nWorkflow: %s\nStep: %s\n",
+					scopy.Name, inst.WorkflowName, inst.Title, inst.WorkflowName, scopy.Name)
+				if err := m.Send(MailMessage{To: to, Subject: subject, PlainBody: plain}); err != nil {
+					engineLog.Error("overdue mail error: %v", err)
+				}
+			}
+			if sink != nil {
+				sink.Notify(InAppNotification{
+					Kind: "overdue", InstanceID: inst.ID, InstanceName: inst.Title,
+					WorkflowName: inst.WorkflowName, StepName: scopy.Name,
+					Message: fmt.Sprintf("Step \"%s\" in \"%s\" is overdue.", scopy.Name, inst.Title),
+					Targets: targets,
+				})
 			}
 		}()
 	})
@@ -460,15 +524,15 @@ func (inst *Instance) activate(s *StepState, now time.Time) {
 	s.UpdatedAt = now
 	setDueAt(s, now)
 	// gate steps send the approval link notification on activation, not on completion
-	if s.Notify != "" && s.Gate {
+	if len(s.Notify) > 0 && s.Gate {
 		m, r := inst.MailSender, inst.EmailResolver
 		scopy := *s
-		go fireNotify(inst, &scopy, m, r)
+		go fireNotify(inst, &scopy, m, r, inst.NotifySink)
 	}
-	if s.Assign != "" {
+	if len(s.Assign) > 0 {
 		m, r := inst.MailSender, inst.EmailResolver
 		scopy := *s
-		go fireAssignNotify(inst, &scopy, m, r)
+		go fireAssignNotify(inst, &scopy, m, r, inst.NotifySink)
 	}
 }
 
@@ -495,7 +559,7 @@ func (inst *Instance) AdvanceStep(stepName string) error {
 	if s == nil {
 		return fmt.Errorf("step '%s' not found", stepName)
 	}
-	log.Printf("[engine] AdvanceStep '%s' status=%s", stepName, s.Status)
+	engineLog.Debug("AdvanceStep %q status=%s", stepName, s.Status)
 	if s.Status != StatusReady {
 		return fmt.Errorf("step '%s' is not ready (status: %s)", stepName, s.Status)
 	}
@@ -600,10 +664,10 @@ func (inst *Instance) completeStep(s *StepState, now time.Time) error {
 	s.Status = StatusDone
 	s.UpdatedAt = now
 	// gate steps already sent their notification on activation
-	if s.Notify != "" && !s.Gate {
+	if len(s.Notify) > 0 && !s.Gate {
 		m, r := inst.MailSender, inst.EmailResolver
 		scopy := *s
-		go fireNotify(inst, &scopy, m, r)
+		go fireNotify(inst, &scopy, m, r, inst.NotifySink)
 	}
 	if s.Ends {
 		s.Status = StatusEnded
@@ -827,22 +891,68 @@ type MailMessage struct {
 	HTMLBody  string
 }
 
+// InAppNotification carries the data for a single in-app notification event.
+// The Store converts this into per-user notification records.
+type InAppNotification struct {
+	Kind         string // "assign", "notify", "overdue", "admin"
+	InstanceID   string
+	InstanceName string
+	WorkflowName string
+	StepName     string
+	Message      string
+	GateURL      string
+	// Targets lists the resolve expressions that should receive this notification
+	// (e.g. assign expression, notify address, "role:admin").
+	Targets []string
+}
+
+// NotificationSink receives in-app notification events from the engine.
+// Implemented by the store layer to fan out to per-user files.
+type NotificationSink interface {
+	Notify(n InAppNotification)
+}
+
 // ── Notification helpers ──────────────────────────────────────────────────────
 
-// fireAssignNotify logs and emails an assignment notification for a step.
-// The email is sent asynchronously; errors are logged but not propagated.
-func fireAssignNotify(inst *Instance, step *StepState, m Mailer, resolve EmailResolver) {
-	logLine := fmt.Sprintf("[%s] ASSIGN → %s | instance: %s (%s) | step: %s",
+// resolveAll resolves a list of target expressions to a deduplicated list of email addresses.
+func resolveAll(targets []string, resolve EmailResolver) []string {
+	if resolve == nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	var result []string
+	for _, target := range targets {
+		for _, email := range resolve(target) {
+			if !seen[email] {
+				seen[email] = true
+				result = append(result, email)
+			}
+		}
+	}
+	return result
+}
+
+// fireAssignNotify logs and emails assignment notifications for all assign targets.
+func fireAssignNotify(inst *Instance, step *StepState, m Mailer, resolve EmailResolver, sink NotificationSink) {
+	engineLog.Info("[%s] ASSIGN → %v | instance: %s (%s) | step: %s",
 		time.Now().Format(time.RFC3339), step.Assign,
 		inst.Title, inst.WorkflowName, step.Name)
-	log.Println(logLine)
+
+	if sink != nil {
+		sink.Notify(InAppNotification{
+			Kind: "assign", InstanceID: inst.ID, InstanceName: inst.Title,
+			WorkflowName: inst.WorkflowName, StepName: step.Name,
+			Message: fmt.Sprintf("You have been assigned to step \"%s\" in \"%s\".", step.Name, inst.Title),
+			Targets: step.Assign,
+		})
+	}
 
 	if m == nil || resolve == nil {
 		return
 	}
-	to := resolve(step.Assign)
+	to := resolveAll(step.Assign, resolve)
 	if len(to) == 0 {
-		log.Printf("[engine] assign: no emails resolved for %q", step.Assign)
+		engineLog.Warn("assign: no emails resolved for %v", step.Assign)
 		return
 	}
 	subject := fmt.Sprintf("[flowapp] Assigned to you: %s — %s", step.Name, inst.Title)
@@ -852,32 +962,44 @@ func fireAssignNotify(inst *Instance, step *StepState, m Mailer, resolve EmailRe
 		plain += fmt.Sprintf("Due: %s\n", step.Due)
 	}
 	if err := m.Send(MailMessage{To: to, Subject: subject, PlainBody: plain}); err != nil {
-		log.Printf("[engine] assign mail error: %v", err)
+		engineLog.Error("assign mail error: %v", err)
 	}
 }
 
-// fireNotify logs and emails a step-ready notification.
+// fireNotify logs and emails step-ready notifications for all notify targets.
 // For gate steps the approval link is included in the message body.
-// The email is sent asynchronously; errors are logged but not propagated.
-func fireNotify(inst *Instance, step *StepState, m Mailer, resolve EmailResolver) {
+func fireNotify(inst *Instance, step *StepState, m Mailer, resolve EmailResolver, sink NotificationSink) {
 	gateURL := ""
 	if step.Gate && step.GateToken != "" {
 		gateURL = fmt.Sprintf("/approve/%s", step.GateToken)
 	}
-	logLine := fmt.Sprintf("[%s] NOTIFY → %s | instance: %s (%s) | step: %s",
+	logLine := fmt.Sprintf("[%s] NOTIFY → %v | instance: %s (%s) | step: %s",
 		time.Now().Format(time.RFC3339), step.Notify,
 		inst.Title, inst.WorkflowName, step.Name)
 	if gateURL != "" {
 		logLine += " | approval link: " + gateURL
 	}
-	log.Println(logLine)
+	engineLog.Info("%s", logLine)
+
+	msg := fmt.Sprintf("Step \"%s\" is ready in \"%s\".", step.Name, inst.Title)
+	if gateURL != "" {
+		msg = fmt.Sprintf("Approval required for step \"%s\" in \"%s\".", step.Name, inst.Title)
+	}
+	if sink != nil {
+		sink.Notify(InAppNotification{
+			Kind: "notify", InstanceID: inst.ID, InstanceName: inst.Title,
+			WorkflowName: inst.WorkflowName, StepName: step.Name,
+			Message: msg, GateURL: gateURL,
+			Targets: step.Notify,
+		})
+	}
 
 	if m == nil || resolve == nil {
 		return
 	}
-	to := resolve(step.Notify)
+	to := resolveAll(step.Notify, resolve)
 	if len(to) == 0 {
-		log.Printf("[engine] notify: no emails resolved for %q", step.Notify)
+		engineLog.Warn("notify: no emails resolved for %v", step.Notify)
 		return
 	}
 	subject := fmt.Sprintf("[flowapp] %s — step %q ready", inst.Title, step.Name)
@@ -890,6 +1012,6 @@ func fireNotify(inst *Instance, step *StepState, m Mailer, resolve EmailResolver
 		plain += fmt.Sprintf("Due: %s\n", step.Due)
 	}
 	if err := m.Send(MailMessage{To: to, Subject: subject, PlainBody: plain}); err != nil {
-		log.Printf("[engine] notify mail error: %v", err)
+		engineLog.Error("notify mail error: %v", err)
 	}
 }

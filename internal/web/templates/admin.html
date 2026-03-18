@@ -2,17 +2,14 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-<meta charset="UTF-8">
-<link rel="stylesheet" href="/static/app.css">
-<link rel="stylesheet" href="/static/common.css">
+{{template "head-base" .}}
 <title>Benutzerverwaltung — FlowApp</title>
-<script src="/static/theme-init.js"></script>
 <link rel="stylesheet" href="/static/admin.css">
 </head>
 <body>
 <header>
   <a href="/">← Board</a>
-  <h2>Benutzerverwaltung</h2>
+  <h2>Benutzer<span>verwaltung</span></h2>
   {{template "menu-user" .}}
 </header>
 
@@ -28,9 +25,11 @@
       <div class="user-meta">
         <div class="user-name">{{.Name}}{{if not .Active}} <span style="font-size:0.7rem;color:var(--text4);">(inaktiv)</span>{{end}}</div>
         <div class="user-email">{{.Email}}</div>
+        <div style="display:flex;align-items:center;gap:0.4rem;flex-wrap:wrap;margin-top:0.25rem;">
+          <span class="role-badge role-{{.Role}}">{{roleLabel .Role}}</span>
+          {{if .AppRoles}}{{range .AppRoles}}<span class="app-role-tag">{{.}}</span>{{end}}{{end}}
+        </div>
       </div>
-      <span class="role-badge role-{{.Role}}">{{roleLabel .Role}}</span>
-      {{if .AppRoles}}<div class="app-roles">{{range .AppRoles}}<span class="app-role-tag">{{.}}</span>{{end}}</div>{{end}}
       <div class="user-actions">
         <button class="btn-sm" onclick="openEdit('{{.ID}}','{{.Name}}','{{.Email}}','{{.Role}}','{{join .AppRoles ","}}',{{if .Active}}true{{else}}false{{end}})">✏</button>
         <button class="btn-sm" onclick="openPw('{{.ID}}','{{.Name}}')">🔑</button>
@@ -184,19 +183,8 @@ function closeModals() {
 }
 document.querySelectorAll('.modal').forEach(m => m.addEventListener('click', e => { if(e.target===m) closeModals(); }));
 document.addEventListener('keydown', e => { if(e.key==='Escape') closeModals(); });
-// toggleTheme() loaded from /static/theme-toggle.js
-function toggleUserMenu() {
-  document.getElementById('userMenuDropdown').classList.toggle('open');
-}
-document.addEventListener('click', e => {
-  const wrap = document.querySelector('.user-menu-wrap');
-  if (wrap && !wrap.contains(e.target)) {
-    const dd = document.getElementById('userMenuDropdown');
-    if (dd) dd.classList.remove('open');
-  }
-});
+
 </script>
-<script src="/static/theme-toggle.js"></script>
 </body>
 </html>
 {{end}}

@@ -2,12 +2,9 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-<meta charset="UTF-8">
-<link rel="stylesheet" href="/static/app.css">
-<link rel="stylesheet" href="/static/common.css">
+{{template "head-base" .}}
 <link rel="stylesheet" href="/static/admin.css">
 <title>Mein Profil — FlowApp</title>
-<script src="/static/theme-init.js"></script>
 </head>
 <body>
 <header>
@@ -58,18 +55,6 @@
   </div>
 </div>
 
-<script src="/static/theme-toggle.js"></script>
-<script>
-function toggleUserMenu() {
-  document.getElementById('userMenuDropdown').classList.toggle('open');
-}
-document.addEventListener('click', e => {
-  const wrap = document.querySelector('.user-menu-wrap');
-  if (wrap && !wrap.contains(e.target)) {
-    document.getElementById('userMenuDropdown').classList.remove('open');
-  }
-});
-</script>
 </body>
 </html>
 {{end}}

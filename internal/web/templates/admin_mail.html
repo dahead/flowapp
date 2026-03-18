@@ -1,0 +1,86 @@
+{{define "admin_mail.html"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+{{template "head-base" .}}
+<title>Mail Configuration — FlowApp</title>
+<link rel="stylesheet" href="/static/admin.css">
+<style>
+.mail-box { max-width: 580px; margin: 2rem auto; }
+.tab-bar { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; }
+.tab-btn { padding: 0.4rem 1rem; border-radius: 6px; border: 1px solid var(--border); background: var(--bg2); color: var(--text2); cursor: pointer; font-size: 0.85rem; }
+.tab-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+.field { margin-bottom: 1rem; }
+.field label { display: block; font-size: 0.82rem; color: var(--text3); margin-bottom: 0.3rem; }
+.field input { width: 100%; box-sizing: border-box; padding: 0.45rem 0.6rem; border-radius: 6px; border: 1px solid var(--border); background: var(--bg2); color: var(--text1); font-size: 0.9rem; }
+.flash-ok { background: #16a34a22; border: 1px solid #16a34a55; color: #16a34a; border-radius: 8px; padding: 0.6rem 1rem; margin-bottom: 1rem; font-size: 0.88rem; }
+.flash-error { background: #ef444422; border: 1px solid #ef444455; color: #ef4444; border-radius: 8px; padding: 0.6rem 1rem; margin-bottom: 1rem; font-size: 0.88rem; }
+.form-actions { display: flex; gap: 0.75rem; margin-top: 1.5rem; align-items: center; }
+</style>
+</head>
+<body>
+<header>
+  <a href="/">← Board</a>
+  <h2>Mail <span>Config</span></h2>
+  {{template "menu-user" .}}
+</header>
+
+<div class="mail-box">
+  {{if .Flash}}<div class="flash-ok">✓ {{.Flash}}</div>{{end}}
+  {{if .Error}}<div class="flash-error">⚠ {{.Error}}</div>{{end}}
+
+  <div class="tab-bar">
+    <button class="tab-btn{{if or (eq .Config.Type "smtp") (eq .Config.Type "")}} active{{end}}" onclick="switchTab('smtp')">SMTP</button>
+    <button class="tab-btn{{if eq .Config.Type "graph"}} active{{end}}" onclick="switchTab('graph')">Microsoft Graph</button>
+  </div>
+
+  <form method="POST" action="/admin/mail" id="mailForm">
+    {{csrfField .CurrentUser}}
+    <input type="hidden" name="type" id="typeField" value="{{if .Config.Type}}{{.Config.Type}}{{else}}smtp{{end}}">
+
+    <!-- SMTP panel -->
+    <div class="tab-panel{{if or (eq .Config.Type "smtp") (eq .Config.Type "")}} active{{end}}" id="panel-smtp">
+      <div class="field"><label>From address</label><input type="email" name="from" value="{{.Config.From}}" placeholder="flowapp@example.com"></div>
+      <div class="field"><label>SMTP host</label><input type="text" name="smtp_host" value="{{.Config.SMTPHost}}" placeholder="mailrelay.example.com"></div>
+      <div class="field"><label>SMTP port</label><input type="number" name="smtp_port" value="{{if .Config.SMTPPort}}{{.Config.SMTPPort}}{{else}}587{{end}}" placeholder="587"></div>
+      <div class="field"><label>Username <small style="color:var(--text4)">(leave empty for unauthenticated relay)</small></label><input type="text" name="smtp_username" value="{{.Config.SMTPUsername}}" autocomplete="off"></div>
+      <div class="field"><label>Password</label><input type="password" name="smtp_password" value="{{.Config.SMTPPassword}}" autocomplete="new-password"></div>
+    </div>
+
+    <!-- Graph panel -->
+    <div class="tab-panel{{if eq .Config.Type "graph"}} active{{end}}" id="panel-graph">
+      <div class="field"><label>From address</label><input type="email" name="from" value="{{.Config.From}}" placeholder="flowapp@example.com"></div>
+      <div class="field"><label>Tenant ID</label><input type="text" name="graph_tenant_id" value="{{.Config.GraphTenantID}}" autocomplete="off"></div>
+      <div class="field"><label>Client ID</label><input type="text" name="graph_client_id" value="{{.Config.GraphClientID}}" autocomplete="off"></div>
+      <div class="field"><label>Client secret</label><input type="password" name="graph_client_secret" value="{{.Config.GraphClientSecret}}" autocomplete="new-password"></div>
+      <div class="field"><label>Sender UPN</label><input type="email" name="graph_sender_upn" value="{{.Config.GraphSenderUPN}}" placeholder="workflow@example.com"></div>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="btn-primary">Save</button>
+    </div>
+  </form>
+
+  {{if .Config.Type}}
+  <form method="POST" action="/admin/mail/test" style="margin-top:1rem;">
+    {{csrfField .CurrentUser}}
+    <button type="submit" class="btn-sm">✉ Send test email to {{.CurrentUser.Email}}</button>
+  </form>
+  {{end}}
+</div>
+
+<script>
+function switchTab(type) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('panel-' + type).classList.add('active');
+  document.getElementById('typeField').value = type;
+  event.target.classList.add('active');
+}
+
+</script>
+</body>
+</html>
+{{end}}

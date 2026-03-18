@@ -25,8 +25,8 @@ type Section struct {
 type Step struct {
 	Name      string
 	Note      string
-	Notify    string   // email address to notify when this step fires
-	Assign    string   // assign expression: "user:<n>", "role:<r>", or bare email
+	Notify    []string // addresses/roles to notify when this step fires (multiple allowed)
+	Assign    []string // assign expressions — multiple allowed, user must match any one
 	Schedule  string   // activation schedule: absolute "2025-12-01" or relative "+3d"
 	Due       string   // time-to-complete deadline: "2h", "3d", "1w"
 	Needs     []string // AND-join: all listed steps must be done before this activates
@@ -125,7 +125,7 @@ func Parse(input string) (*Workflow, error) {
 			if currentStep == nil {
 				return nil, fmt.Errorf("line %d: 'assign' must be inside a step", lineNum)
 			}
-			currentStep.Assign = strings.Join(args, " ")
+			currentStep.Assign = append(currentStep.Assign, strings.Join(args, " "))
 
 		case "schedule":
 			if currentStep == nil {
@@ -146,7 +146,7 @@ func Parse(input string) (*Workflow, error) {
 			if currentStep == nil {
 				return nil, fmt.Errorf("line %d: 'notify' must be inside a step", lineNum)
 			}
-			currentStep.Notify = strings.Join(args, " ")
+			currentStep.Notify = append(currentStep.Notify, strings.Join(args, " "))
 
 		case "item", "- ":
 			// checklist item: item "Text" or item! "Required text"
@@ -247,7 +247,7 @@ func tokenize(line string) []string {
 		switch {
 		case ch == '"':
 			inQuote = !inQuote
-			cur.WriteRune(ch)
+			// quotes are delimiters only — not written into the token
 		case (ch == ' ' || ch == '\t') && !inQuote:
 			if cur.Len() > 0 {
 				tokens = append(tokens, cur.String())

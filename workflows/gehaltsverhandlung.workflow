@@ -30,6 +30,7 @@ section "Vorbereitung"
     needs "Zielgehalt festlegen"
     note "Konkreten Termin anfragen, nicht zwischen Tür und Angel"
     due 2d
+    notify "role:hr"
     ask "Termin bestätigt?" -> "Gespräch vorbereiten", "Nachfassen"
 
   step "Nachfassen"
@@ -46,6 +47,7 @@ section "Gespräch"
 
   step "Gehaltsverhandlung führen"
     needs "Gespräch vorbereiten"
+    assign "role:management"
     note "Ruhig bleiben, konkret fordern, Stille aushalten"
     ask "Wie ist das Gespräch verlaufen?" -> "Zusage erhalten", "Absage erhalten", "Bedenkzeit erbeten"
 
@@ -55,18 +57,20 @@ section "Nachbereitung"
     note "Schriftliche Bestätigung oder Vertragsänderung anfordern"
     list "Schriftliche Bestätigung erhalten" required
     list "Neues Gehalt im Vertrag / Nachtrag" required
-    notify "privat@email.de"
+    notify "role:hr"
 
   step "Bedenkzeit erbeten"
     needs "Gehaltsverhandlung führen"
     note "Frist setzen: max. 1-2 Wochen"
     ask "Entscheidung nach Bedenkzeit?" -> "Zusage erhalten", "Absage erhalten"
     gate
-    notify "privat@email.de"
+    assign "role:management"
+    notify "role:hr"
 
   step "Absage erhalten"
     needs "Gehaltsverhandlung führen"
     note "Gründe erfragen, nächsten Reviewtermin vereinbaren oder Alternativen prüfen"
+    notify "role:hr"
     list "Gründe für Absage erfragt" optional
     list "Nächsten Termin in 6 Monaten vereinbart" optional
     list "Markt sondieren / Alternativen prüfen" optional

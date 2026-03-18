@@ -39,7 +39,7 @@ section "Zusage"
     needs "Zusage vorbereiten"
     ask "Aufnahme bestätigen?" -> "Eltern benachrichtigen", "Zurück zur Prüfung"
     gate
-    notify "leitung@kita.de"
+    notify "role:leitung"
 
   step "Zurück zur Prüfung"
     needs "Leitung genehmigt Aufnahme"

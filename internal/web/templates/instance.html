@@ -66,8 +66,8 @@
             <div class="step-name {{.Status}}">{{.Name}}</div>
 
             {{if .Note}}<div class="step-note">📎 {{.Note}}</div>{{end}}
-            {{if .Notify}}<div class="step-notify">📧 {{.Notify}}</div>{{end}}
-            {{if .Assign}}<div class="step-assign">👤 {{.Assign}}</div>{{end}}
+            {{range .Notify}}<div class="step-notify">📧 {{.}}</div>{{end}}
+            {{range .Assign}}<div class="step-assign">👤 {{.}}</div>{{end}}
             {{if .ScheduleAt}}<div class="step-schedule">🗓 scheduled: {{.ScheduleAt.Format "02.01.2006 15:04"}}</div>{{end}}
             {{if .Needs}}<div class="step-needs">⏳ needs: {{visibleNeeds .Needs}}</div>{{end}}
 
@@ -317,10 +317,7 @@ function toggleToolMenu(btn) {
   }
 }
 
-// toggleTheme() loaded from /static/theme-toggle.js
-{{template "menu-js" .}}
 </script>
-<script src="/static/theme-toggle.js"></script>
 </body>
 </html>
 {{end}}

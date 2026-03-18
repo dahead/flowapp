@@ -15,11 +15,18 @@
       <div class="user-menu-sep"></div>
       <a class="user-menu-item" href="/builder">⚙ Builder</a>
       <a class="user-menu-item" href="/archive">📦 Archive</a>
+      <a class="user-menu-item{{if isPage .Page "notifications"}} active{{end}}" href="/notifications">
+        🔔 Benachrichtigungen{{if gt .UnreadCount 0}} <span class="notif-badge">{{.UnreadCount}}</span>{{end}}
+      </a>
       <div class="user-menu-sep"></div>
       <a class="user-menu-item" href="/profile">⚙ Einstellungen</a>
       {{if isAdmin .CurrentUser}}
-      <a class="user-menu-item{{if isPage .Page "users"}} active{{end}}" href="/admin/users">👥 Benutzerverwaltung</a>
-      <a class="user-menu-item{{if isPage .Page "mail"}} active{{end}}" href="/admin/mail">✉ Mail-Konfiguration</a>
+      <div class="user-menu-sub">
+        <div class="user-menu-sub-label">Admin</div>
+        <a class="user-menu-item{{if isPage .Page "users"}} active{{end}}" href="/admin/users">👥 Benutzer</a>
+        <a class="user-menu-item{{if isPage .Page "mail"}} active{{end}}" href="/admin/mail">✉ Mail</a>
+        <a class="user-menu-item{{if isPage .Page "system"}} active{{end}}" href="/admin/system">⚙ System</a>
+      </div>
       {{end}}
       <button class="user-menu-item" onclick="toggleTheme()">◐ Dark Mode</button>
       <div class="user-menu-sep"></div>
@@ -34,22 +41,7 @@
 
 {{define "head-base"}}
 <meta charset="UTF-8">
-<link rel="stylesheet" href="/static/app.css">
 <link rel="stylesheet" href="/static/common.css">
 <script src="/static/theme-init.js"></script>
-{{end}}
-
-{{define "menu-js"}}
-<script>
-function toggleUserMenu() {
-  document.getElementById('userMenuDropdown').classList.toggle('open');
-}
-document.addEventListener('click', e => {
-  const wrap = document.querySelector('.user-menu-wrap');
-  if (wrap && !wrap.contains(e.target)) {
-    const dd = document.getElementById('userMenuDropdown');
-    if (dd) dd.classList.remove('open');
-  }
-});
-</script>
+<script src="/static/common.js"></script>
 {{end}}

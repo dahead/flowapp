@@ -64,4 +64,4 @@ section "Abschluss"
 
   step "Abschluss"
     needs "Altes Konto kündigen", "Wechsel bestätigt"
-    notify "privat@email.de"
+    notify "role:finance"

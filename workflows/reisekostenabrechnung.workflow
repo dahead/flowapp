@@ -20,6 +20,7 @@ section "Einreichung"
   step "Einreichen"
     needs "Abrechnung erstellen"
     ask "Abrechnung vollständig und eingereicht?" -> "Prüfung", "Nachbesserung nötig"
+    notify "role:buchhaltung"
 
   step "Nachbesserung nötig"
     needs "Einreichen"
@@ -27,21 +28,23 @@ section "Einreichung"
 
 section "Prüfung"
   step "Prüfung"
+    assign "role:buchhaltung"
     ask "Abrechnung geprüft und genehmigt?" -> "Auszahlung", "Abgelehnt"
     gate
-    notify "buchhaltung@firma.de"
+    notify "role:buchhaltung"
     due 5d
 
   step "Abgelehnt"
     needs "Prüfung"
-    notify "hr@firma.de"
+    notify "role:hr"
     ends
 
 section "Auszahlung"
   step "Auszahlung"
     needs "Prüfung"
+    assign "role:buchhaltung"
     due 7d
-    notify "buchhaltung@firma.de"
+    notify "role:buchhaltung"
 
   step "Abgeschlossen"
     needs "Auszahlung"
@@ -49,8 +52,9 @@ section "Auszahlung"
 
   step "Nachfragen"
     needs "Abgeschlossen"
-    notify "buchhaltung@firma.de"
+    notify "role:buchhaltung"
     ends
 
   step "Archivieren"
     needs "Abgeschlossen"
+    assign "role:buchhaltung"

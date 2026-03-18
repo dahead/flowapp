@@ -7,6 +7,8 @@ section "Erster Krankheitstag"
   step "Arbeitgeber informieren"
     note "Spätestens vor Arbeitsbeginn anrufen oder schreiben — gesetzliche Pflicht"
     due 4h
+    notify "role:management"
+    notify "role:hr"
     list "Vorgesetzte/n benachrichtigt" required
     list "Team informiert (optional)" optional
 
@@ -40,6 +42,7 @@ section "Einreichung"
     needs "AU erhalten"
     note "Original an Arbeitgeber, Kopie an Krankenkasse — oder elektronisch (eAU)"
     due 1d
+    notify "role:hr"
     list "AU an Arbeitgeber übermittelt" required
     list "AU an Krankenkasse (falls nicht eAU)" optional
 
@@ -50,25 +53,32 @@ section "Einreichung"
 
   step "Genesung"
     needs "Krankentagegeld prüfen"
+    notify "role:hr"
+    notify "role:management"
     ends
 
 section "Langzeiterkrankung"
   step "Krankengeld beantragen"
     needs "Krankentagegeld prüfen"
-    notify "krankenkasse@email.de"
+    assign "role:hr"
+    notify "role:hr"
     due 3d
     list "Antrag bei Krankenkasse gestellt" required
     list "Lohnbescheinigung vom Arbeitgeber" required
 
   step "Wiedereingliederung planen"
     needs "Krankengeld beantragen"
+    assign "role:hr"
     note "Hamburger Modell: schrittweise Rückkehr möglich"
     ask "Stufenweise Wiedereingliederung gewünscht?" -> "Wiedereingliederungsplan erstellen", "Normale Rückkehr"
 
   step "Wiedereingliederungsplan erstellen"
     needs "Wiedereingliederung planen"
-    notify "hr@firma.de"
+    assign "role:hr"
+    notify "role:hr"
+    notify "role:management"
 
   step "Normale Rückkehr"
     needs "Wiedereingliederung planen"
+    notify "role:hr"
     ends

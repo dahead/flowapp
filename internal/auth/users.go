@@ -5,9 +5,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"golang.org/x/crypto/bcrypt"
-	"log"
 	"os"
+	"path/filepath"
+
+	"golang.org/x/crypto/bcrypt"
+
+	"flowapp/internal/logger"
 	"strings"
 	"sync"
 	"time"
@@ -22,6 +25,8 @@ const (
 	RoleViewer  Role = "viewer"
 	RoleUser    Role = "user"
 )
+
+var authLog = logger.New("auth")
 
 // User represents an application user with authentication and role information.
 type User struct {
@@ -58,10 +63,25 @@ func (u *User) CanCloneInstance() bool {
 // UserStore is an in-memory user registry backed by a JSON file.
 // All mutations are written through to disk immediately.
 type UserStore struct {
-	mu      sync.RWMutex
-	path    string
-	users   map[string]*User
-	byEmail map[string]*User
+	mu       sync.RWMutex
+	path     string
+	users    map[string]*User
+	byEmail  map[string]*User
+	onChange func() // called after any mutation; set via OnChange()
+}
+
+// OnChange registers a callback that is called after any user mutation
+// (Create, Update, Delete, FullReset). Use this to refresh derived indexes.
+func (s *UserStore) OnChange(fn func()) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.onChange = fn
+}
+
+func (s *UserStore) notifyChange() {
+	if s.onChange != nil {
+		go s.onChange()
+	}
 }
 
 // NewUserStore loads the user store from the given JSON file path.
@@ -70,7 +90,7 @@ func NewUserStore(path string) (*UserStore, error) {
 	s := &UserStore{path: path, users: map[string]*User{}, byEmail: map[string]*User{}}
 	if _, err := os.Stat(path); err == nil {
 		if err := s.load(); err != nil {
-			log.Printf("[auth] failed to load user store from %s: %v", path, err)
+			authLog.Error("failed to load user store from %s: %v", path, err)
 			return nil, err
 		}
 	}
@@ -100,11 +120,15 @@ func (s *UserStore) save() error {
 	for _, u := range s.users {
 		list = append(list, u)
 	}
-	data, err := json.MarshalIndent(list, "", "  ")
+	data, err := json.Marshal(list)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(s.path, data, 0644)
+	tmp := s.path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, s.path)
 }
 
 // Empty returns true if no users have been created yet (first-run state).
@@ -120,7 +144,7 @@ func (s *UserStore) Create(email, name, password string, role Role) (*User, erro
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, exists := s.byEmail[email]; exists {
-		log.Printf("[auth] create user failed — email already registered: %s", email)
+		authLog.Warn("create user: email already registered: %s", email)
 		return nil, fmt.Errorf("E-Mail bereits registriert")
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
@@ -135,10 +159,11 @@ func (s *UserStore) Create(email, name, password string, role Role) (*User, erro
 	s.users[u.ID] = u
 	s.byEmail[u.Email] = u
 	if err := s.save(); err != nil {
-		log.Printf("[auth] create user failed — save error for %s: %v", email, err)
+		authLog.Error("create user: save error for %s: %v", email, err)
 		return nil, err
 	}
-	log.Printf("[auth] created user %s (%s) role=%s", u.ID, email, role)
+	authLog.Info("created user %s (%s) role=%s", u.ID, email, role)
+	s.notifyChange()
 	return u, nil
 }
 
@@ -149,7 +174,7 @@ func (s *UserStore) Authenticate(email, password string) (*User, error) {
 	u := s.byEmail[email]
 	s.mu.RUnlock()
 	if u == nil || !u.Active {
-		log.Printf("[auth] authentication failed — unknown or inactive user: %s", email)
+		authLog.Warn("authentication failed — unknown or inactive user: %s", email)
 		return nil, fmt.Errorf("Ungültige Zugangsdaten")
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)); err != nil {
@@ -187,7 +212,7 @@ func (s *UserStore) Update(id, name, email string, role Role, appRoles []string,
 	}
 	if email != u.Email {
 		if _, exists := s.byEmail[email]; exists {
-			log.Printf("[auth] update user failed — email already taken: %s", email)
+			authLog.Warn("update user: email already taken: %s", email)
 			return fmt.Errorf("E-Mail bereits vergeben")
 		}
 		delete(s.byEmail, u.Email)
@@ -199,9 +224,10 @@ func (s *UserStore) Update(id, name, email string, role Role, appRoles []string,
 	u.AppRoles = appRoles
 	u.Active = active
 	if err := s.save(); err != nil {
-		log.Printf("[auth] update user failed — save error for %s: %v", id, err)
+		authLog.Error("update user: save error for %s: %v", id, err)
 		return err
 	}
+	s.notifyChange()
 	return nil
 }
 
@@ -219,10 +245,10 @@ func (s *UserStore) ResetPassword(id, newPassword string) error {
 	}
 	u.PasswordHash = string(hash)
 	if err := s.save(); err != nil {
-		log.Printf("[auth] reset password failed — save error for %s: %v", id, err)
+		authLog.Error("reset password: save error for %s: %v", id, err)
 		return err
 	}
-	log.Printf("[auth] password reset for user %s", id)
+	authLog.Info("password reset for user %s", id)
 	return nil
 }
 
@@ -232,16 +258,17 @@ func (s *UserStore) Delete(id string) error {
 	defer s.mu.Unlock()
 	u, ok := s.users[id]
 	if !ok {
-		log.Printf("[auth] delete user failed — not found: %s", id)
+		authLog.Warn("delete user: not found: %s", id)
 		return fmt.Errorf("user not found")
 	}
 	delete(s.byEmail, u.Email)
 	delete(s.users, id)
 	if err := s.save(); err != nil {
-		log.Printf("[auth] delete user failed — save error for %s: %v", id, err)
+		authLog.Error("delete user: save error for %s: %v", id, err)
 		return err
 	}
-	log.Printf("[auth] deleted user %s (%s)", id, u.Email)
+	authLog.Info("deleted user %s (%s)", id, u.Email)
+	s.notifyChange()
 	return nil
 }
 
@@ -288,6 +315,70 @@ func (s *UserStore) ResolveEmails(expr string) []string {
 	}
 	// bare email — pass through directly
 	return []string{expr}
+}
+
+// AdminIDs returns the user IDs of all active admin users.
+func (s *UserStore) AdminIDs() []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var ids []string
+	for _, u := range s.users {
+		if u.Active && u.Role == RoleAdmin {
+			ids = append(ids, u.ID)
+		}
+	}
+	return ids
+}
+
+// EmailUserIndex returns a map of email address → user ID for all active users.
+func (s *UserStore) EmailUserIndex() map[string]string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	idx := make(map[string]string, len(s.users))
+	for _, u := range s.users {
+		if u.Active {
+			idx[u.Email] = u.ID
+		}
+	}
+	return idx
+}
+
+// FullReset wipes all users from memory and deletes the backing JSON file.
+// After this call the store is empty; the application should redirect to /setup.
+func (s *UserStore) FullReset() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.users = map[string]*User{}
+	s.byEmail = map[string]*User{}
+	if err := os.Remove(s.path); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove users file: %w", err)
+	}
+	authLog.Info("FullReset: all users deleted")
+	s.notifyChange()
+	return nil
+}
+
+// DeleteSessionSecret removes the persisted session secret from disk (both the
+// data dir path and the legacy ~/.config path) and rotates the in-memory secret
+// so all existing sessions become invalid immediately.
+func DeleteSessionSecret(dataDir string) error {
+	// remove data dir secret
+	dataPath := filepath.Join(dataDir, "session-secret")
+	if err := os.Remove(dataPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove session secret: %w", err)
+	}
+	// also remove legacy ~/.config path if present
+	if legacyPath, err := secretPath(); err == nil {
+		_ = os.Remove(legacyPath)
+	}
+	// rotate in-memory secret — all existing cookies are now invalid
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return fmt.Errorf("generate new secret: %w", err)
+	}
+	sessionSecret = b
+	authLog.Info("session secret rotated — all sessions invalidated")
+	return nil
 }
 
 // newID generates a random 24-character hex string for use as a unique ID.
