@@ -3,6 +3,7 @@ package web
 import (
 	"encoding/json"
 	"flowapp/internal/auth"
+	"flowapp/internal/dsl"
 	"flowapp/internal/engine"
 	"flowapp/internal/logger"
 	"flowapp/internal/mailer"
@@ -152,7 +153,7 @@ func New(s *store.Store, users *auth.UserStore, tmplGlob string, dataDir string)
 			}
 			return circ - (float64(done)/float64(total))*circ
 		},
-		"canWrite": func(u *auth.User) bool { return u != nil && u.CanWrite() },
+		"canCreateInstance": func(u *auth.User) bool { return u != nil && u.CanCreateInstance() },
 		// isPage returns true if the given page name matches the current page.
 		// Each handler sets Page on its data struct so the partial can highlight the active nav link.
 		"isPage": func(page, current string) bool { return page == current },
@@ -160,7 +161,7 @@ func New(s *store.Store, users *auth.UserStore, tmplGlob string, dataDir string)
 		// Admins and steps without an assign field are always allowed.
 		// Otherwise the user must match at least one assign expression.
 		"canDoStep": func(u *auth.User, s *engine.StepState) bool {
-			if u == nil || !u.CanWrite() {
+			if u == nil || !u.CanCreateInstance() {
 				return false
 			}
 			if u.CanAdmin() || len(s.Assign) == 0 {
@@ -223,7 +224,7 @@ func (h *Handler) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 func (h *Handler) requireWrite(next http.HandlerFunc) http.HandlerFunc {
 	return h.requireAuth(func(w http.ResponseWriter, r *http.Request) {
 		u := h.currentUser(r)
-		if !u.CanWrite() {
+		if !u.CanCreateInstance() {
 			h.renderError(w, r, "Keine Berechtigung für diese Aktion.", http.StatusForbidden)
 			return
 		}
@@ -443,13 +444,15 @@ func (h *Handler) workflowsPage(w http.ResponseWriter, r *http.Request) {
 	sort.Slice(defs, func(i, j int) bool { return defs[i].Name < defs[j].Name })
 	cards := make([]workflowCard, 0, len(defs))
 	for _, d := range defs {
+		if !userCanStartWorkflow(u, d) {
+			continue
+		}
 		steps := 0
 		for _, sec := range d.Sections {
 			steps += len(sec.Steps)
 		}
 		cards = append(cards, workflowCard{
 			Name:      d.Name,
-			Priority:  d.Priority,
 			Labels:    d.Labels,
 			Vars:      d.Vars,
 			StepCount: steps,
@@ -588,6 +591,9 @@ func (h *Handler) board(w http.ResponseWriter, r *http.Request) {
 		"Done":        {Title: "Done"},
 	}
 	for _, inst := range instances {
+		if !userCanViewInstance(u, inst) {
+			continue
+		}
 		if q != "" && !strings.Contains(strings.ToLower(inst.Title+" "+inst.WorkflowName), q) {
 			continue
 		}
@@ -669,14 +675,21 @@ func (h *Handler) newInstancePrompt(w http.ResponseWriter, r *http.Request) {
 		title = wfName
 	}
 	defs := h.store.Definitions()
+	u := h.currentUser(r)
 	for _, d := range defs {
-		if d.Name == wfName && len(d.Vars) > 0 {
-			h.render(w, r, "new_instance.html", newInstanceData{WorkflowName: wfName, Title: title, Priority: priority, Vars: d.Vars, CurrentUser: h.currentUser(r), Page: "", UnreadCount: h.unreadCount(h.currentUser(r))})
-			return
+		if d.Name == wfName {
+			if !userCanStartWorkflow(u, d) {
+				h.renderError(w, r, "Keine Berechtigung zum Starten dieses Workflows.", http.StatusForbidden)
+				return
+			}
+			if len(d.Vars) > 0 {
+				h.render(w, r, "new_instance.html", newInstanceData{WorkflowName: wfName, Title: title, Priority: priority, Vars: d.Vars, CurrentUser: u, Page: "", UnreadCount: h.unreadCount(u)})
+				return
+			}
 		}
 	}
 	// no vars — create directly without showing the prompt page
-	if _, err := h.store.CreateInstance(wfName, title, priority); err != nil {
+	if _, err := h.store.CreateInstance(wfName, title, priority, u.ID); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -690,6 +703,9 @@ func (h *Handler) archive(w http.ResponseWriter, r *http.Request) {
 	all := h.store.ArchivedInstances()
 	var filtered []*engine.Instance
 	for _, inst := range all {
+		if !userCanViewInstance(u, inst) {
+			continue
+		}
 		if q == "" || strings.Contains(strings.ToLower(inst.Title+" "+inst.WorkflowName), q) {
 			filtered = append(filtered, inst)
 		}
@@ -726,7 +742,11 @@ func (h *Handler) instanceDetail(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	// compute prev/next from position-sorted active instances
+	u := h.currentUser(r)
+	if !userCanViewInstance(u, inst) {
+		h.renderError(w, r, "Keine Berechtigung für diese Instanz.", http.StatusForbidden)
+		return
+	}
 	all := h.store.Instances()
 	sort.Slice(all, func(i, j int) bool {
 		if all[i].Position != all[j].Position {
@@ -758,7 +778,14 @@ func (h *Handler) createInstance(w http.ResponseWriter, r *http.Request) {
 	if title == "" {
 		title = wfName
 	}
-	inst, err := h.store.CreateInstance(wfName, title, r.FormValue("priority"))
+	u := h.currentUser(r)
+	for _, d := range h.store.Definitions() {
+		if d.Name == wfName && !userCanStartWorkflow(u, d) {
+			h.renderError(w, r, "Keine Berechtigung zum Starten dieses Workflows.", http.StatusForbidden)
+			return
+		}
+	}
+	inst, err := h.store.CreateInstance(wfName, title, r.FormValue("priority"), u.ID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -949,10 +976,9 @@ func (h *Handler) apiWorkflows(w http.ResponseWriter, r *http.Request) {
 	list := make([]workflowInfo, 0, len(defs))
 	for _, d := range defs {
 		list = append(list, workflowInfo{
-			Name:     d.Name,
-			Priority: d.Priority,
-			Labels:   d.Labels,
-			Vars:     d.Vars,
+			Name:   d.Name,
+			Labels: d.Labels,
+			Vars:   d.Vars,
 		})
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -965,7 +991,7 @@ func (h *Handler) apiWorkflows(w http.ResponseWriter, r *http.Request) {
 // since Viewers are not permitted to approve gate steps.
 func (h *Handler) approvalPage(w http.ResponseWriter, r *http.Request) {
 	// if a logged-in user visits the page, check they have write access
-	if u := h.currentUser(r); u != nil && !u.CanWrite() {
+	if u := h.currentUser(r); u != nil && !u.CanCreateInstance() {
 		http.Redirect(w, r, "/login?next="+r.URL.RequestURI(), http.StatusSeeOther)
 		return
 	}
@@ -1403,7 +1429,7 @@ func hasLabel(labels []string, filter string) bool {
 // Admins and unassigned steps are always permitted.
 // Otherwise the user must match at least one assign expression.
 func userCanDoStep(u *auth.User, s *engine.StepState) bool {
-	if u == nil || !u.CanWrite() {
+	if u == nil || !u.CanCreateInstance() {
 		return false
 	}
 	if u.CanAdmin() || len(s.Assign) == 0 {
@@ -1423,7 +1449,60 @@ func userCanDoStep(u *auth.User, s *engine.StepState) bool {
 	return false
 }
 
-// ── Profile ───────────────────────────────────────────────────────────────────
+// userCanStartWorkflow returns true if the user may create an instance of the given workflow.
+// Admins and managers always can. If AllowedRoles is empty, all CanCreateInstance users can.
+// Otherwise the user must have at least one matching app_role.
+func userCanStartWorkflow(u *auth.User, wf *dsl.Workflow) bool {
+	if u == nil || !u.CanCreateInstance() {
+		return false
+	}
+	if u.Role == auth.RoleAdmin || u.Role == auth.RoleManager {
+		return true
+	}
+	if len(wf.AllowedRoles) == 0 {
+		return true
+	}
+	for _, role := range wf.AllowedRoles {
+		role = strings.TrimPrefix(role, "role:")
+		if slices.Contains(u.AppRoles, role) {
+			return true
+		}
+	}
+	return false
+}
+
+// userCanViewInstance returns true if the user may see the given instance.
+// Admins and managers always can. Normal users can only see instances where
+// their app_role or direct user: expression appears in at least one assign field
+// anywhere in the workflow (across all steps, not just active ones).
+func userCanViewInstance(u *auth.User, inst *engine.Instance) bool {
+	if u == nil {
+		return false
+	}
+	if u.Role == auth.RoleAdmin || u.Role == auth.RoleManager {
+		return true
+	}
+	// creator always sees their own instance
+	if inst.CreatedBy == u.ID {
+		return true
+	}
+	for _, sec := range inst.Sections {
+		for _, s := range sec.Steps {
+			for _, expr := range s.Assign {
+				if expr == "user:"+u.Name || expr == "user:"+u.Email || expr == u.Name || expr == u.Email {
+					return true
+				}
+				if strings.HasPrefix(expr, "role:") {
+					roleName := strings.TrimPrefix(expr, "role:")
+					if slices.Contains(u.AppRoles, roleName) {
+						return true
+					}
+				}
+			}
+		}
+	}
+	return false
+}
 
 // profilePage renders the current user's profile page.
 func (h *Handler) profilePage(w http.ResponseWriter, r *http.Request) {

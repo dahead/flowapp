@@ -40,8 +40,9 @@ type User struct {
 	Active       bool      `json:"active"`
 }
 
-// CanWrite returns true if the user may create or modify workflow instances.
-func (u *User) CanWrite() bool {
+// CanCreateInstance returns true if the user may create workflow instances.
+// Admins, managers, and regular users with an app_role can; viewers cannot.
+func (u *User) CanCreateInstance() bool {
 	return u.Role == RoleAdmin || u.Role == RoleUser || u.Role == RoleManager
 }
 
@@ -315,6 +316,49 @@ func (s *UserStore) ResolveEmails(expr string) []string {
 	}
 	// bare email — pass through directly
 	return []string{expr}
+}
+
+// ResolveUserIDs resolves an assign/notify expression directly to internal user IDs.
+// This is used for in-app notification fan-out and is independent of email or any
+// other messaging channel.
+//
+// Supported formats:
+//   - "user:<email>"  — match by email address
+//   - "user:<name>"   — match by display name (case-insensitive)
+//   - "role:<role>"   — all active users with the given app_role
+func (s *UserStore) ResolveUserIDs(expr string) []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	expr = strings.TrimSpace(expr)
+	if strings.HasPrefix(expr, "user:") {
+		val := strings.TrimPrefix(expr, "user:")
+		if u, ok := s.byEmail[val]; ok && u.Active {
+			return []string{u.ID}
+		}
+		for _, u := range s.users {
+			if u.Active && strings.EqualFold(u.Name, val) {
+				return []string{u.ID}
+			}
+		}
+		return nil
+	}
+	if strings.HasPrefix(expr, "role:") {
+		role := strings.TrimPrefix(expr, "role:")
+		var ids []string
+		for _, u := range s.users {
+			if !u.Active {
+				continue
+			}
+			for _, r := range u.AppRoles {
+				if r == role {
+					ids = append(ids, u.ID)
+					break
+				}
+			}
+		}
+		return ids
+	}
+	return nil
 }
 
 // AdminIDs returns the user IDs of all active admin users.

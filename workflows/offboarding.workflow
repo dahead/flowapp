@@ -1,6 +1,6 @@
 workflow "Employee Offboarding"
-priority high
-label hr
+allowed_roles role:hr role:payroll role:it role:facilities
+label business
 
 section "Initiation"
   step "Offboarding Initiated"

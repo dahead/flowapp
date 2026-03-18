@@ -1,5 +1,5 @@
 workflow Demo: Schedule & Assign
-priority medium
+allowed_roles role:finance role:hr
 label demo
 
 section Vorbereitung

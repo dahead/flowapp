@@ -4,14 +4,43 @@
     <option name="autoReloadType" value="ALL" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="ada8723d-5b9c-428d-afc5-8d56573480fd" name="Changes" comment="No browser console logging.">
+    <list default="true" id="ada8723d-5b9c-428d-afc5-8d56573480fd" name="Changes" comment="More fixes, redesign, ...">
+      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/TODO.md" beforeDir="false" afterPath="$PROJECT_DIR$/TODO.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/cmd/server/main.go" beforeDir="false" afterPath="$PROJECT_DIR$/cmd/server/main.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/data/1773427348769114060.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/web/static/admin.css" beforeDir="false" afterPath="$PROJECT_DIR$/internal/web/static/admin.css" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/web/static/board.css" beforeDir="false" afterPath="$PROJECT_DIR$/internal/web/static/board.css" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/web/static/builder.css" beforeDir="false" afterPath="$PROJECT_DIR$/internal/web/static/builder.css" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/web/static/common.css" beforeDir="false" afterPath="$PROJECT_DIR$/internal/web/static/common.css" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/flowapp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/flowapp.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/internal/auth/users.go" beforeDir="false" afterPath="$PROJECT_DIR$/internal/auth/users.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/internal/dsl/parser.go" beforeDir="false" afterPath="$PROJECT_DIR$/internal/dsl/parser.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/internal/engine/engine.go" beforeDir="false" afterPath="$PROJECT_DIR$/internal/engine/engine.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/internal/store/store.go" beforeDir="false" afterPath="$PROJECT_DIR$/internal/store/store.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/internal/web/handler.go" beforeDir="false" afterPath="$PROJECT_DIR$/internal/web/handler.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/internal/web/templates/approve.html" beforeDir="false" afterPath="$PROJECT_DIR$/internal/web/templates/approve.html" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/internal/web/templates/board.html" beforeDir="false" afterPath="$PROJECT_DIR$/internal/web/templates/board.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/internal/web/templates/instance.html" beforeDir="false" afterPath="$PROJECT_DIR$/internal/web/templates/instance.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/setup/users.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/workflows/demo-schedule-assign.workflow" beforeDir="false" afterPath="$PROJECT_DIR$/workflows/demo-schedule-assign.workflow" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/workflows/geburtstagsfeier.workflow" beforeDir="false" afterPath="$PROJECT_DIR$/workflows/geburtstagsfeier.workflow" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/workflows/gehaltsverhandlung.workflow" beforeDir="false" afterPath="$PROJECT_DIR$/workflows/gehaltsverhandlung.workflow" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/workflows/invoice.workflow" beforeDir="false" afterPath="$PROJECT_DIR$/workflows/invoice.workflow" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/workflows/kita-anmeldung.workflow" beforeDir="false" afterPath="$PROJECT_DIR$/workflows/kita-anmeldung.workflow" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/workflows/kontowechsel.workflow" beforeDir="false" afterPath="$PROJECT_DIR$/workflows/kontowechsel.workflow" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/workflows/krankmeldung-simple.workflow" beforeDir="false" afterPath="$PROJECT_DIR$/workflows/krankmeldung-simple.workflow" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/workflows/krankmeldung.workflow" beforeDir="false" afterPath="$PROJECT_DIR$/workflows/krankmeldung.workflow" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/workflows/offboarding.workflow" beforeDir="false" afterPath="$PROJECT_DIR$/workflows/offboarding.workflow" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/workflows/onboarding.workflow" beforeDir="false" afterPath="$PROJECT_DIR$/workflows/onboarding.workflow" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/workflows/parallel-demo.workflow" beforeDir="false" afterPath="$PROJECT_DIR$/workflows/parallel-demo.workflow" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/workflows/product-launch.workflow" beforeDir="false" afterPath="$PROJECT_DIR$/workflows/product-launch.workflow" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/workflows/reisekostenabrechnung.workflow" beforeDir="false" afterPath="$PROJECT_DIR$/workflows/reisekostenabrechnung.workflow" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/workflows/schulausflug.workflow" beforeDir="false" afterPath="$PROJECT_DIR$/workflows/schulausflug.workflow" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/workflows/shopping-simple.workflow" beforeDir="false" afterPath="$PROJECT_DIR$/workflows/shopping-simple.workflow" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/workflows/shopping.workflow" beforeDir="false" afterPath="$PROJECT_DIR$/workflows/shopping.workflow" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/workflows/umzug.workflow" beforeDir="false" afterPath="$PROJECT_DIR$/workflows/umzug.workflow" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/workflows/urlaub-beantragen.workflow" beforeDir="false" afterPath="$PROJECT_DIR$/workflows/urlaub-beantragen.workflow" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/workflows/vertragsmanagement.workflow" beforeDir="false" afterPath="$PROJECT_DIR$/workflows/vertragsmanagement.workflow" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -19,7 +48,7 @@
     <option name="LAST_RESOLUTION" value="IGNORE" />
   </component>
   <component name="EmbeddingIndexingInfo">
-    <option name="cachedIndexableFilesCount" value="81" />
+    <option name="cachedIndexableFilesCount" value="98" />
     <option name="fileBasedEmbeddingIndicesEnabled" value="true" />
   </component>
   <component name="GOROOT" url="file:///usr/lib/go" />
@@ -52,38 +81,39 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;Go Build.Build.executor&quot;: &quot;Run&quot;,
-    &quot;Go Build.go build flowapp.executor&quot;: &quot;Run&quot;,
-    &quot;Go Build.go build main.go.executor&quot;: &quot;Run&quot;,
-    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.GoLinterPluginOnboardingV2&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.GoLinterPluginStorageMigration&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.MCP Project settings loaded&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.go.analysis.ui.options.defaults&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.go.formatter.settings.were.checked&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.go.modules.go.list.on.any.changes.was.set&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.typescript.service.memoryLimit.init&quot;: &quot;true&quot;,
-    &quot;com.intellij.ml.llm.matterhorn.ej.ui.settings.DefaultModelSelectionForGA.v1&quot;: &quot;true&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
-    &quot;go.sdk.automatically.set&quot;: &quot;true&quot;,
-    &quot;junie.onboarding.icon.badge.shown&quot;: &quot;true&quot;,
-    &quot;last_opened_file_path&quot;: &quot;/home/dh/GolandProjects/flowapp&quot;,
-    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
-    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
-    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
-    &quot;settings.editor.selected.configurable&quot;: &quot;org.jetbrains.plugins.github.ui.GithubSettingsConfigurable&quot;,
-    &quot;to.speed.mode.migration.done&quot;: &quot;true&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "Go Build.Build.executor": "Run",
+    "Go Build.go build flowapp.executor": "Run",
+    "Go Build.go build main.go.executor": "Run",
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "RunOnceActivity.GoLinterPluginOnboardingV2": "true",
+    "RunOnceActivity.GoLinterPluginStorageMigration": "true",
+    "RunOnceActivity.MCP Project settings loaded": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "RunOnceActivity.go.analysis.ui.options.defaults": "true",
+    "RunOnceActivity.go.formatter.settings.were.checked": "true",
+    "RunOnceActivity.go.modules.go.list.on.any.changes.was.set": "true",
+    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
+    "com.intellij.ml.llm.matterhorn.ej.ui.settings.DefaultModelSelectionForGA.v1": "true",
+    "git-widget-placeholder": "main",
+    "go.sdk.automatically.set": "true",
+    "junie.onboarding.icon.badge.shown": "true",
+    "last_opened_file_path": "/home/dh/GolandProjects/flowapp",
+    "node.js.detected.package.eslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "settings.editor.selected.configurable": "ml.llm.LLMThirdPartyAiProvidersConfigurable",
+    "to.speed.mode.migration.done": "true"
   },
-  &quot;keyToStringList&quot;: {
-    &quot;com.intellij.ide.scratch.ScratchImplUtil$2/New Scratch File&quot;: [
-      &quot;Markdown&quot;
+  "keyToStringList": {
+    "com.intellij.ide.scratch.ScratchImplUtil$2/New Scratch File": [
+      "Markdown"
     ]
   }
-}</component>
+}]]></component>
   <component name="RecentsManager">
     <key name="MoveFile.RECENT_KEYS">
       <recent name="$PROJECT_DIR$/ideas" />
@@ -137,7 +167,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="Windows Build.&#10;&#10;GOOS=windows GOARCH=amd64 go build -o flowapp.exe ./cmd/server" />
     <MESSAGE value="Linux Build.&#10;&#10;GOOS=linux GOARCH=amd64 go build -o flowapp ./cmd/server" />
     <MESSAGE value="Parameter parsing and verbose" />
     <MESSAGE value="Update README" />
@@ -153,9 +182,16 @@
     <MESSAGE value="Screenshots" />
     <MESSAGE value="Builds" />
     <MESSAGE value="CSS out sourced, rate limiter, logic errors, archive, variables." />
-    <MESSAGE value="Fixes" />
     <MESSAGE value="Builds: Updated file" />
     <MESSAGE value="No browser console logging." />
-    <option name="LAST_COMMIT_MESSAGE" value="No browser console logging." />
+    <MESSAGE value="CSS fixes" />
+    <MESSAGE value="Tests" />
+    <MESSAGE value="Fixes, new features. Better layout." />
+    <MESSAGE value="Fixes" />
+    <MESSAGE value="Comments" />
+    <MESSAGE value="Fixes, Improvements, Todo..." />
+    <MESSAGE value="UI fixes" />
+    <MESSAGE value="More fixes, redesign, ..." />
+    <option name="LAST_COMMIT_MESSAGE" value="More fixes, redesign, ..." />
   </component>
 </project>

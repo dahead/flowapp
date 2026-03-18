@@ -1,5 +1,5 @@
 workflow "Schulausflug planen"
-priority medium
+allowed_roles role:lehrer role:sekretariat
 label schule
 label organisation
 var ZIEL

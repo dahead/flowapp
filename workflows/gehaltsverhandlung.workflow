@@ -1,7 +1,6 @@
 workflow "Gehaltsverhandlung"
-priority high
-label personal
-label hr
+allowed_roles role:management
+label business
 
 section "Vorbereitung"
   step "Marktwert recherchieren"

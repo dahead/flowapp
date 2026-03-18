@@ -1,6 +1,6 @@
 workflow "Shopping List"
-priority low
 label shopping
+label privat
 
 section "Planning"
   step "Create List"

@@ -1,7 +1,7 @@
 workflow "Krankmeldung"
-priority high
+allowed_roles role:hr
 label personal
-label hr
+label business
 
 section "Erster Krankheitstag"
   step "Arbeitgeber informieren"

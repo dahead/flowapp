@@ -156,7 +156,7 @@
               {{end}}
             </div>
             {{end}}
-            {{if and (canWrite $.CurrentUser) (not (isDone .)) (not (isSkipped .)) (not (isPending .))}}
+            {{if and (canCreateInstance $.CurrentUser) (not (isDone .)) (not (isSkipped .)) (not (isPending .))}}
             <form class="step-comment-form" method="POST" action="/instance/{{$id}}/stepcomment">
                 {{csrfField $.CurrentUser}}
               <input type="hidden" name="step" value="{{$step.Name}}">

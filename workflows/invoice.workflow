@@ -1,5 +1,5 @@
 workflow "Invoice Payment"
-priority medium
+allowed_roles role:warehouse role:finance
 label finance
 
 section "Order"

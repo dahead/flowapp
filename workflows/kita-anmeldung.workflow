@@ -1,5 +1,5 @@
 workflow "KiTa-Anmeldung"
-priority high
+allowed_roles role:verwaltung role:leitung
 label kita
 label verwaltung
 var KIND_NAME

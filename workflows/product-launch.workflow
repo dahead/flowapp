@@ -1,6 +1,6 @@
 workflow "Product Launch"
-priority high
-label product
+allowed_roles role:management role:design role:engineering
+label demo
 
 section "Planning"
   step "Define Scope"

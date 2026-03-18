@@ -9,7 +9,7 @@
 <body>
 <header>
   <h1>Flow<span>App</span></h1>
-  {{if canWrite .CurrentUser}}
+  {{if canCreateInstance .CurrentUser}}
   <a class="btn-new-instance" href="/workflows">+ Neue Instanz</a>
   {{end}}
   {{template "menu-user" .}}

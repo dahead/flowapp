@@ -1,6 +1,6 @@
 workflow "Urlaub beantragen"
-priority low
-label hr
+allowed_roles role:management
+label business
 label personal
 
 section "Planung"

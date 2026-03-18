@@ -8,11 +8,11 @@ import (
 
 // Workflow is the parsed representation of a .workflow file.
 type Workflow struct {
-	Name     string
-	Priority string
-	Labels   []string
-	Vars     []string // variable names prompted at instance creation (e.g. "Employee Name")
-	Sections []*Section
+	Name         string
+	Labels       []string
+	Vars         []string // variable names prompted at instance creation (e.g. "Employee Name")
+	AllowedRoles []string // roles permitted to start this workflow; empty = all CanCreateInstance users
+	Sections     []*Section
 }
 
 // Section groups a set of related steps under a named heading.
@@ -79,11 +79,11 @@ func Parse(input string) (*Workflow, error) {
 			}
 			wf.Name = strings.Join(args, " ")
 
-		case "priority":
-			if len(args) == 0 {
-				return nil, fmt.Errorf("line %d: 'priority' requires low/medium/high", lineNum)
-			}
-			wf.Priority = strings.ToLower(args[0])
+		//case "priority":
+		//	if len(args) == 0 {
+		//		return nil, fmt.Errorf("line %d: 'priority' requires low/medium/high", lineNum)
+		//	}
+		//	wf.Priority = strings.ToLower(args[0])
 
 		case "label":
 			if len(args) == 0 {
@@ -96,6 +96,12 @@ func Parse(input string) (*Workflow, error) {
 				return nil, fmt.Errorf("line %d: 'var' requires a variable name", lineNum)
 			}
 			wf.Vars = append(wf.Vars, strings.Join(args, " "))
+
+		case "allowed_roles":
+			if len(args) == 0 {
+				return nil, fmt.Errorf("line %d: 'allowed_roles' requires at least one role", lineNum)
+			}
+			wf.AllowedRoles = append(wf.AllowedRoles, args...)
 
 		case "section":
 			if len(args) == 0 {

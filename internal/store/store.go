@@ -29,18 +29,19 @@ type Store struct {
 	definitions map[string]*dsl.Workflow
 	instances   map[string]*engine.Instance
 
-	// optional mailer and email resolver; nil = log-only notifications
+	// optional mailer and email resolver for sending mail; nil = no mail
 	mailer        engine.Mailer
 	emailResolver engine.EmailResolver
+
+	// userResolver resolves assign/notify expressions to internal user IDs.
+	// Used for in-app notification fan-out. Always set, independent of mailer.
+	userResolver engine.UserResolver
 
 	// in-app notification store
 	notifStore *notifications.Store
 
 	// adminIDs holds user IDs of all admins, refreshed via SetAdminIDs.
 	adminIDs []string
-
-	// emailToUserID maps email address → user ID for in-app notification fan-out.
-	emailToUserID map[string]string
 }
 
 // New creates a Store, loads all workflow definitions and persisted instances,
@@ -56,10 +57,9 @@ func New(workflowDir, dataDir string) (*Store, error) {
 	}
 	s := &Store{
 		workflowDir: workflowDir, dataDir: commonDir,
-		definitions:   make(map[string]*dsl.Workflow),
-		instances:     make(map[string]*engine.Instance),
-		notifStore:    ns,
-		emailToUserID: make(map[string]string),
+		definitions: make(map[string]*dsl.Workflow),
+		instances:   make(map[string]*engine.Instance),
+		notifStore:  ns,
 	}
 	if err := os.MkdirAll(commonDir, 0755); err != nil {
 		return nil, err
@@ -89,12 +89,13 @@ func (s *Store) SetAdminIDs(ids []string) {
 	s.adminIDs = ids
 }
 
-// SetEmailUserIndex sets the email→userID lookup table used for in-app notification fan-out.
-// Should be called at startup and whenever users change.
-func (s *Store) SetEmailUserIndex(idx map[string]string) {
+// SetUserResolver sets the resolver used for in-app notification fan-out.
+// It maps assign/notify expressions (e.g. "role:hr") directly to internal user IDs.
+// Must be called at startup, independent of any mail or messaging configuration.
+func (s *Store) SetUserResolver(r engine.UserResolver) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.emailToUserID = idx
+	s.userResolver = r
 }
 
 // Notifications returns the in-app notification store.
@@ -103,25 +104,24 @@ func (s *Store) Notifications() *notifications.Store {
 }
 
 // Notify implements engine.NotificationSink. It fans out an in-app notification
-// to all matching internal users (resolved via emailResolver) and to all admins.
+// to all matching internal users (resolved via userResolver) and to all admins.
 func (s *Store) Notify(n engine.InAppNotification) {
-	// resolve target expressions → user IDs via emailResolver
-	seen := map[string]bool{}
-	if s.emailResolver != nil {
+	userIDs := map[string]bool{}
+
+	s.mu.RLock()
+	resolver := s.userResolver
+	admins := s.adminIDs
+	s.mu.RUnlock()
+
+	if resolver != nil {
 		for _, target := range n.Targets {
-			emails := s.emailResolver(target)
-			for _, email := range emails {
-				seen[email] = true
+			for _, uid := range resolver(target) {
+				userIDs[uid] = true
 			}
 		}
 	}
-	// find user IDs by email
-	userIDs := s.resolveUserIDsByEmail(seen)
 
 	// always include admins
-	s.mu.RLock()
-	admins := s.adminIDs
-	s.mu.RUnlock()
 	for _, id := range admins {
 		userIDs[id] = true
 	}
@@ -142,23 +142,6 @@ func (s *Store) Notify(n engine.InAppNotification) {
 		s.notifStore.Add(uid, notif)
 		storeLog.Debug("Notify → user %s (%s)", uid, n.Kind)
 	}
-}
-
-// resolveUserIDsByEmail looks up internal user IDs for a set of email addresses.
-// Must NOT be called with s.mu held (acquires RLock internally via injected resolver).
-func (s *Store) resolveUserIDsByEmail(emails map[string]bool) map[string]bool {
-	// We don't have direct access to the UserStore here; instead we use the
-	// emailToUserID index that is set via SetEmailUserIndex.
-	s.mu.RLock()
-	idx := s.emailToUserID
-	s.mu.RUnlock()
-	result := map[string]bool{}
-	for email := range emails {
-		if uid, ok := idx[email]; ok {
-			result[uid] = true
-		}
-	}
-	return result
 }
 
 // inject sets the runtime-only Mailer, EmailResolver, and NotifySink fields on an instance
@@ -265,7 +248,7 @@ func (s *Store) loadDefinitions() error {
 			if _, dup := s.definitions[wf.Name]; !dup {
 				break
 			}
-			wf.Name = fmt.Sprintf("%s -%d", origName, i)
+			wf.Name = fmt.Sprintf("%s-%d", origName, i)
 		}
 		if wf.Name != origName {
 			storeLog.Warn("duplicate workflow name %s in %s — renamed to %s", origName, e.Name(), wf.Name)
@@ -347,7 +330,7 @@ func (s *Store) AllLabels() []string {
 // priority may be empty to use the workflow default.
 // Mailer and EmailResolver are set before the initial activation so that
 // notifications fire correctly for steps that are immediately ready.
-func (s *Store) CreateInstance(workflowName, title, priority string) (*engine.Instance, error) {
+func (s *Store) CreateInstance(workflowName, title, priority, createdBy string) (*engine.Instance, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	wf, ok := s.definitions[workflowName]
@@ -355,11 +338,9 @@ func (s *Store) CreateInstance(workflowName, title, priority string) (*engine.In
 		return nil, fmt.Errorf("workflow '%s' not found", workflowName)
 	}
 	wfCopy := *wf
-	if priority != "" {
-		wfCopy.Priority = priority
-	}
 	id := fmt.Sprintf("%d", time.Now().UnixNano())
 	inst := engine.NewInstance(id, title, &wfCopy, s.mailer, s.emailResolver, s)
+	inst.CreatedBy = createdBy
 	s.instances[id] = inst
 	storeLog.Info("created instance %s — %s (%s)", id, title, workflowName)
 	return inst, s.save(inst)
@@ -379,7 +360,6 @@ func (s *Store) CloneInstance(id string) (*engine.Instance, error) {
 		return nil, fmt.Errorf("workflow definition not found")
 	}
 	wfCopy := *wf
-	wfCopy.Priority = src.Priority
 	newID := fmt.Sprintf("%d", time.Now().UnixNano())
 	inst := engine.NewInstance(newID, src.Title+" (copy)", &wfCopy, s.mailer, s.emailResolver, s)
 	s.instances[newID] = inst

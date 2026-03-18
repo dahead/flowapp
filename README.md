@@ -87,7 +87,7 @@ FlowApp delivers notifications in two ways: **in-app** (bell icon, 🔔) and **e
 | `anna@example.com` (bare email) | Only if a user with that address exists | Always sent |
 | Admins | Always receive a copy of every notification | — |
 
-Both `assign` and `notify` trigger notifications. `assign` additionally restricts who may complete the step.
+Both `assign` and `notify` trigger in-app notifications. `assign` additionally restricts who may complete the step. In-app notification fan-out works independently of any mail configuration.
 
 ### In-app notifications
 
@@ -131,6 +131,7 @@ Workflow files live in `workflows/`. They are hot-reloaded on save — no restar
 workflow "Name"
 priority high          # low | medium | high (default: medium)
 label finance          # multiple labels allowed
+allowed_roles role:hr role:finance  # who may start this workflow (empty = all users with write access)
 var "Employee Name"    # prompts for a value when creating an instance ($Employee Name)
 
 section "Name"
@@ -157,6 +158,7 @@ section "Name"
 | `workflow` | top | Workflow name |
 | `priority` | top | `low` / `medium` / `high` |
 | `label` | top | Tag for filtering (multiple allowed) |
+| `allowed_roles` | top | Roles permitted to start this workflow, e.g. `role:hr role:finance`. Empty = all users with create-instance permission. Admins and managers always bypass this. |
 | `var` | top | Variable name — prompted at instance creation, substituted as `$Name` |
 | `section` | top | Visual group — no runtime effect |
 | `step` | section | A task. Name must be unique within the workflow |
@@ -220,14 +222,19 @@ step "Final Sign-off"
 
 ## User Roles
 
-| Role | Complete steps | Archive | Clone | Delete | Admin |
-|---|---|---|---|---|---|
-| Viewer | – | – | – | – | – |
-| User | ✓ | ✓ | – | – | – |
-| Manager | ✓ | ✓ | ✓ | ✓ | – |
-| Admin | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Role | See instances | Complete steps | Archive | Clone | Delete | Admin |
+|---|---|---|---|---|---|---|
+| Viewer | assigned only | – | – | – | – | – |
+| User | assigned only | ✓ (own steps) | ✓ | – | – | – |
+| Manager | all | ✓ | ✓ | ✓ | ✓ | – |
+| Admin | all | ✓ | ✓ | ✓ | ✓ | ✓ |
 
-**App Roles** (e.g. `hr`, `finance`) are separate from the site role. They are used in workflow `assign` directives to restrict which users can complete a specific step.
+**App Roles** (e.g. `hr`, `finance`) are separate from the site role. They control two things:
+
+1. **Visibility** — a User only sees instances where their app role (or a direct `user:` expression) appears in at least one `assign` field of the workflow.
+2. **Step completion** — a User may only complete a step if their app role or direct user expression matches the step's `assign` field.
+
+**Starting workflows** — Admins and Managers can always start any workflow. A `User` can only start a workflow if their app role matches at least one entry in the workflow's `allowed_roles` list (or if `allowed_roles` is empty).
 
 ## Kanban Board
 

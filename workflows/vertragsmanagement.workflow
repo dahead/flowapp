@@ -1,5 +1,5 @@
 workflow "Vertragsmanagement"
-priority high
+allowed_roles role:legal role:management
 label finance
 label legal
 

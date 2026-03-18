@@ -1,6 +1,5 @@
 workflow "Kontowechsel"
-priority medium
-label finanzen
+label finance
 
 section "Vorbereitung"
   step "Neues Konto eröffnen"

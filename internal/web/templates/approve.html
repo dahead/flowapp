@@ -38,6 +38,16 @@ body {
   line-height: 1.6;
 }
 .ap-meta strong { color: var(--text); font-weight: 600; }
+.ap-vars {
+  margin: .5rem 0 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: .1rem .75rem;
+  font-size: .85rem;
+  color: var(--text-muted);
+}
+.ap-vars dt { font-weight: 600; color: var(--text); white-space: nowrap; }
+.ap-vars dd { margin: 0; }
 .ap-step-name {
   font-size: 1.1rem;
   font-weight: 700;
@@ -136,6 +146,11 @@ body {
   <div class="ap-meta">
     <strong>{{.Instance.Title}}</strong><br>
     {{.Instance.WorkflowName}}
+    {{if .Instance.Vars}}
+    <dl class="ap-vars">
+      {{range $k, $v := .Instance.Vars}}<dt>{{$k}}</dt><dd>{{$v}}</dd>{{end}}
+    </dl>
+    {{end}}
   </div>
   {{end}}
   <div class="ap-step-name">{{.Step.Name}}</div>

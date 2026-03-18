@@ -1,6 +1,7 @@
 workflow "Reisekostenabrechnung"
-priority medium
+allowed_roles role:buchhaltung
 label finance
+label business
 
 section "Einreichung"
   step "Belege sammeln"

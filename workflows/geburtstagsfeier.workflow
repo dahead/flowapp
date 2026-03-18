@@ -1,5 +1,4 @@
 workflow "Geburtstagsfeier planen"
-priority medium
 label privat
 label event
 var NAME

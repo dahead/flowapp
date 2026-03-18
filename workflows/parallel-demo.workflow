@@ -1,5 +1,4 @@
 workflow "Parallel Demo"
-priority low
 label demo
 
 section "Parallel Work"

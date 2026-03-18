@@ -1,6 +1,6 @@
 workflow "Employee Onboarding"
-priority high
-label hr
+allowed_roles role:hr role:it
+label business
 
 var EMPLOYEE_NAME
 var START_DATE

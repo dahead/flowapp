@@ -71,6 +71,7 @@ type Instance struct {
 	Status       Status            `json:"status"`
 	Position     int               `json:"position"`
 	Archived     bool              `json:"archived,omitempty"`
+	CreatedBy    string            `json:"created_by,omitempty"` // user ID of the instance creator
 	Vars         map[string]string `json:"vars,omitempty"`
 	Comments     []Comment         `json:"comments,omitempty"`
 	Audit        []AuditEntry      `json:"audit,omitempty"`
@@ -297,7 +298,7 @@ func NewInstance(id, title string, wf *dsl.Workflow, m Mailer, r EmailResolver, 
 	now := time.Now()
 	inst := &Instance{
 		ID: id, WorkflowName: wf.Name, Title: title,
-		Labels: wf.Labels, Priority: wf.Priority,
+		Labels:    wf.Labels,
 		CreatedAt: now, UpdatedAt: now, Status: StatusReady,
 		Vars:          make(map[string]string),
 		MailSender:    m,
@@ -870,6 +871,11 @@ func filterNeeds(needs []string) []string {
 }
 
 // ── Mailer types ──────────────────────────────────────────────────────────────
+
+// UserResolver maps an assign/notify expression to a list of internal user IDs.
+// It is used for in-app notification fan-out and is independent of any mail or
+// messaging configuration. Implement this to support any future notification channel.
+type UserResolver func(expr string) []string
 
 // EmailResolver maps an assign/notify expression to a list of resolved email addresses.
 // Implemented by auth.UserStore.ResolveEmails.

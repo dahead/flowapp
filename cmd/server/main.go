@@ -74,9 +74,9 @@ func main() {
 	}
 
 	// ── Notification fan-out index ────────────────────────────────────────────
+	s.SetUserResolver(users.ResolveUserIDs)
 	refreshIndex := func() {
 		s.SetAdminIDs(users.AdminIDs())
-		s.SetEmailUserIndex(users.EmailUserIndex())
 	}
 	refreshIndex()
 	users.OnChange(refreshIndex)

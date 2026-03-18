@@ -1,5 +1,4 @@
 workflow "Umzug organisieren"
-priority high
 label haushalt
 label privat
 var NEUE_ADRESSE
