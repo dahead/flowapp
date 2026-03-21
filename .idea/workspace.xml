@@ -4,48 +4,14 @@
     <option name="autoReloadType" value="ALL" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="ada8723d-5b9c-428d-afc5-8d56573480fd" name="Changes" comment="Builder reworked.">
+    <list default="true" id="ada8723d-5b9c-428d-afc5-8d56573480fd" name="Changes" comment="Lang to en.">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/data/1773427348769114060.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/i18n/i18n.go" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/web (copy 1)/handler.go" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/web (copy 1)/static/admin.css" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/web (copy 1)/static/archive.css" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/web (copy 1)/static/auth.css" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/web (copy 1)/static/board.css" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/web (copy 1)/static/builder.css" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/web (copy 1)/static/common.css" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/web (copy 1)/static/common.js" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/web (copy 1)/static/instance.css" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/web (copy 1)/static/theme-init.js" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/web (copy 1)/templates/admin.html" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/web (copy 1)/templates/admin_mail.html" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/web (copy 1)/templates/admin_system.html" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/web (copy 1)/templates/approve.html" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/web (copy 1)/templates/archive.html" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/web (copy 1)/templates/board.html" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/web (copy 1)/templates/builder.html" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/web (copy 1)/templates/error.html" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/web (copy 1)/templates/instance.html" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/web (copy 1)/templates/login.html" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/web (copy 1)/templates/new_instance.html" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/web (copy 1)/templates/notifications.html" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/web (copy 1)/templates/partials.html" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/web (copy 1)/templates/profile.html" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/web (copy 1)/templates/setup.html" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/web (copy 1)/templates/workflows.html" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/internal/web/templates/admin.html" beforeDir="false" afterPath="$PROJECT_DIR$/internal/web/templates/admin.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/web/templates/board.html" beforeDir="false" afterPath="$PROJECT_DIR$/internal/web/templates/board.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/web/templates/error.html" beforeDir="false" afterPath="$PROJECT_DIR$/internal/web/templates/error.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/web/templates/layout.html" beforeDir="false" afterPath="$PROJECT_DIR$/internal/web/templates/layout.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/web/templates/new_instance.html" beforeDir="false" afterPath="$PROJECT_DIR$/internal/web/templates/new_instance.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/web/templates/notifications.html" beforeDir="false" afterPath="$PROJECT_DIR$/internal/web/templates/notifications.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/web/templates/partials.html" beforeDir="false" afterPath="$PROJECT_DIR$/internal/web/templates/partials.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/web/templates/profile.html" beforeDir="false" afterPath="$PROJECT_DIR$/internal/web/templates/profile.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/web/templates/tasks.html" beforeDir="false" afterPath="$PROJECT_DIR$/internal/web/templates/tasks.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/locales/de.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/locales/en.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/setup/users.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/internal/web/templates/admin_system.html" beforeDir="false" afterPath="$PROJECT_DIR$/internal/web/templates/admin_system.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/internal/web/templates/approve.html" beforeDir="false" afterPath="$PROJECT_DIR$/internal/web/templates/approve.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/internal/web/templates/login.html" beforeDir="false" afterPath="$PROJECT_DIR$/internal/web/templates/login.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/internal/web/templates/setup.html" beforeDir="false" afterPath="$PROJECT_DIR$/internal/web/templates/setup.html" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -173,7 +139,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="Update README" />
     <MESSAGE value="Notify: Add email" />
     <MESSAGE value="new builds" />
     <MESSAGE value="Change from JSON to PG" />
@@ -198,7 +163,8 @@
     <MESSAGE value="Assign:role respected." />
     <MESSAGE value="Fixes" />
     <MESSAGE value="Builder reworked." />
-    <option name="LAST_COMMIT_MESSAGE" value="Builder reworked." />
+    <MESSAGE value="Lang to en." />
+    <option name="LAST_COMMIT_MESSAGE" value="Lang to en." />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/flowapp$Build.out" NAME="Build Coverage Results" MODIFIED="1774024823533" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="GoCoverage" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" />

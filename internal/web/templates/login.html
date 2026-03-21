@@ -9,13 +9,13 @@
 <body>
 <div class="card">
   <div class="logo">Flow<span>App</span></div>
-  <div class="subtitle">Bitte anmelden</div>
+  <div class="subtitle">Please login</div>
   {{if .Error}}<div class="error">{{.Error}}</div>{{end}}
   <form method="POST" action="/login">
     <input type="hidden" name="next" value="{{.Next}}">
     <div class="field"><label>E-Mail</label><input type="email" name="email" autofocus required></div>
-    <div class="field"><label>Passwort</label><input type="password" name="password" required></div>
-    <button class="btn" type="submit">Anmelden</button>
+    <div class="field"><label>Password</label><input type="password" name="password" required></div>
+    <button class="btn" type="submit">Login</button>
   </form>
 </div>
 </body>

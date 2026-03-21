@@ -3,13 +3,13 @@
 <html lang="de">
 <head>
 {{template "head-base" .}}
-<title>Benutzerverwaltung — FlowApp</title>
+<title>User administration — FlowApp</title>
 <link rel="stylesheet" href="/static/admin.css">
 </head>
 <body>
 <header>
   <a href="/">← Board</a>
-  <h2>Benutzer<span>verwaltung</span></h2>
+  <h2>User<span>administration</span></h2>
   {{template "menu-user" .}}
 </header>
 
@@ -23,7 +23,7 @@
     <div class="user-row{{if not .Active}} inactive{{end}}">
       <div class="user-avatar">{{initial .Name}}</div>
       <div class="user-meta">
-        <div class="user-name">{{.Name}}{{if not .Active}} <span style="font-size:0.7rem;color:var(--text4);">(inaktiv)</span>{{end}}</div>
+        <div class="user-name">{{.Name}}{{if not .Active}} <span style="font-size:0.7rem;color:var(--text4);">(inactive)</span>{{end}}</div>
         <div class="user-email">{{.Email}}</div>
         <div style="display:flex;align-items:center;gap:0.4rem;flex-wrap:wrap;margin-top:0.25rem;">
           <span class="role-badge role-{{.Role}}">{{roleLabel .Role}}</span>
@@ -42,7 +42,7 @@
   <!-- Create user form -->
   <div class="box">
     <div class="form-box">
-      <h3>Neuen Benutzer anlegen</h3>
+      <h3>Create new user</h3>
       <form method="POST" action="/admin/users">
                 {{csrfField .CurrentUser}}
         <div class="field"><label>Name</label><input type="text" name="name" required></div>

@@ -21,8 +21,8 @@
         <div>
           <div style="font-weight:600;color:var(--text);margin-bottom:0.3rem;">Full Reset</div>
           <div style="font-size:0.83rem;color:var(--text3);line-height:1.5;">
-            Löscht alle Instanzen, Notifications, alle User und das Session Secret.<br>
-            Nicht rückgängig zu machen.
+            Start fresh. Delete all instances, notifications, users and the session secret.<br>
+            This is not reversible!
           </div>
         </div>
         <button class="btn-sm danger" style="flex-shrink:0;" onclick="document.getElementById('resetModal').classList.add('open')">🗑 Full Reset</button>
@@ -36,15 +36,15 @@
   <div class="modal-box">
     <div class="modal-title" style="color:#f87171;">⚠ Full Reset</div>
     <p style="font-size:0.9rem;color:var(--text2);margin:0.75rem 0 1.25rem;">
-      Das löscht <strong>alle Instanzen, alle Notifications, alle User</strong> und das Session Secret.<br>
-      Du wirst sofort ausgeloggt und zur Setup-Seite weitergeleitet.<br><br>
-      <strong>Diese Aktion kann nicht rückgängig gemacht werden.</strong>
+      This deletes <strong>all instances, alle notifications, all users</strong> and the sesseion secret.<br>
+      You will be logged out immediately and forwareded to the setup page.<br><br>
+      <strong>This action is not reversible.</strong>
     </p>
     <div style="display:flex;gap:0.5rem;justify-content:flex-end;">
-      <button type="button" class="btn-sm" onclick="document.getElementById('resetModal').classList.remove('open')">Abbrechen</button>
+      <button type="button" class="btn-sm" onclick="document.getElementById('resetModal').classList.remove('open')">Cancel</button>
       <form method="POST" action="/admin/full-reset" style="margin:0;">
         {{csrfField .CurrentUser}}
-        <button type="submit" class="btn-sm danger">Ja, alles löschen</button>
+        <button type="submit" class="btn-sm danger">Yes, delete everything</button>
       </form>
     </div>
   </div>
