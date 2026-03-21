@@ -139,9 +139,20 @@ func (s *UserStore) Empty() bool {
 	return len(s.users) == 0
 }
 
+// validRole returns true if r is one of the four defined roles.
+func validRole(r Role) bool {
+	return r == RoleAdmin || r == RoleManager || r == RoleUser || r == RoleViewer
+}
+
 // Create adds a new user with a bcrypt-hashed password.
 // Returns an error if the email is already registered.
 func (s *UserStore) Create(email, name, password string, role Role) (*User, error) {
+	if len(password) < 8 {
+		return nil, fmt.Errorf("password must be at least 8 characters")
+	}
+	if !validRole(role) {
+		return nil, fmt.Errorf("invalid role: %s", role)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, exists := s.byEmail[email]; exists {
@@ -205,6 +216,9 @@ func (s *UserStore) List() []*User {
 
 // Update modifies an existing user's profile fields and persists the change.
 func (s *UserStore) Update(id, name, email string, role Role, appRoles []string, active bool) error {
+	if !validRole(role) {
+		return fmt.Errorf("invalid role: %s", role)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	u, ok := s.users[id]

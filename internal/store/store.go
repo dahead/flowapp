@@ -422,6 +422,9 @@ func (s *Store) AdvanceStep(id, stepName string) error {
 	if !ok {
 		return fmt.Errorf("instance not found")
 	}
+	if inst.Archived {
+		return fmt.Errorf("instance is archived")
+	}
 	s.inject(inst)
 	if err := inst.AdvanceStep(stepName); err != nil {
 		return err
@@ -436,6 +439,9 @@ func (s *Store) AnswerAsk(id, stepName string, chosenIdx int) error {
 	inst, ok := s.instances[id]
 	if !ok {
 		return fmt.Errorf("instance not found")
+	}
+	if inst.Archived {
+		return fmt.Errorf("instance is archived")
 	}
 	s.inject(inst)
 	if err := inst.AnswerAsk(stepName, chosenIdx); err != nil {
@@ -477,10 +483,16 @@ func (s *Store) UpdateInstance(id, title, priority, labels string) error {
 	if !ok {
 		return fmt.Errorf("instance not found")
 	}
+	if inst.Archived {
+		return fmt.Errorf("instance is archived")
+	}
 	if title != "" {
 		inst.Title = title
 	}
 	if priority != "" {
+		if priority != "low" && priority != "medium" && priority != "high" {
+			return fmt.Errorf("invalid priority: %s", priority)
+		}
 		inst.Priority = priority
 	}
 	var parsed []string
@@ -504,6 +516,9 @@ func (s *Store) ToggleListItem(id, stepName, itemID string) error {
 	if !ok {
 		return fmt.Errorf("instance not found")
 	}
+	if inst.Archived {
+		return fmt.Errorf("instance is archived")
+	}
 	if err := inst.ToggleListItem(stepName, itemID); err != nil {
 		return err
 	}
@@ -518,6 +533,9 @@ func (s *Store) CheckAllListItems(id, stepName string) error {
 	if !ok {
 		return fmt.Errorf("instance not found")
 	}
+	if inst.Archived {
+		return fmt.Errorf("instance is archived")
+	}
 	inst.CheckAllListItems(stepName)
 	return s.save(inst)
 }
@@ -529,6 +547,9 @@ func (s *Store) AddListItem(id, stepName, text string) error {
 	inst, ok := s.instances[id]
 	if !ok {
 		return fmt.Errorf("instance not found")
+	}
+	if inst.Archived {
+		return fmt.Errorf("instance is archived")
 	}
 	if err := inst.AddListItem(stepName, text); err != nil {
 		return err
@@ -544,6 +565,9 @@ func (s *Store) AddStepComment(id, stepName, text string) error {
 	if !ok {
 		return fmt.Errorf("instance not found")
 	}
+	if inst.Archived {
+		return fmt.Errorf("instance is archived")
+	}
 	if err := inst.AddStepComment(stepName, text); err != nil {
 		return err
 	}
@@ -557,6 +581,9 @@ func (s *Store) AddComment(id, text string) error {
 	inst, ok := s.instances[id]
 	if !ok {
 		return fmt.Errorf("instance not found")
+	}
+	if inst.Archived {
+		return fmt.Errorf("instance is archived")
 	}
 	if err := inst.AddComment(text); err != nil {
 		return err
@@ -600,6 +627,9 @@ func (s *Store) ArchiveInstance(id string) error {
 	inst, ok := s.instances[id]
 	if !ok {
 		return fmt.Errorf("instance not found")
+	}
+	if inst.Archived {
+		return nil
 	}
 	inst.Archived = true
 	inst.UpdatedAt = time.Now()

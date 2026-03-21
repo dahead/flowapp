@@ -1,0 +1,131 @@
+{{define "tasks.html"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+{{template "head-base" .}}
+<title>Meine Aufgaben — FlowApp</title>
+<link rel="stylesheet" href="/static/tasks.css">
+</head>
+<body>
+<header>
+  <a href="/">← Board</a>
+  <h1>Flow<span>App</span></h1>
+  {{template "menu-user" .}}
+</header>
+
+<div class="content tasks-content">
+
+  {{$cu := .CurrentUser}}
+  {{$total := add (len .Overdue) (len .Ready)}}
+
+  <div class="tasks-header">
+    <h2>Meine Aufgaben
+      {{if gt $total 0}}<span class="tasks-count">{{$total}}</span>{{end}}
+    </h2>
+    <span class="tasks-user">{{$cu.Name}}{{if $cu.AppRoles}} · {{join $cu.AppRoles ", "}}{{end}}</span>
+  </div>
+
+  {{if eq $total 0}}
+  <div class="empty-state">
+    <div class="empty-icon">✓</div>
+    <div>Keine offenen Aufgaben.</div>
+  </div>
+  {{else}}
+
+  {{if .Overdue}}
+  <div class="task-section-label overdue-label">Überfällig</div>
+  {{range .Overdue}}
+  <div class="task-card overdue">
+    <div class="task-card-inner">
+      <div class="task-meta-top">
+        <a class="task-instance-link" href="/instance/{{.InstanceID}}">{{.InstanceTitle}}</a>
+        <span class="task-sep">·</span>
+        <span class="task-workflow">{{.WorkflowName}}</span>
+        <span class="task-sep">·</span>
+        <span class="task-section">{{.SectionName}}</span>
+        <span class="task-overdue-tag">{{dueLabel .Step}}</span>
+      </div>
+      <div class="task-name">{{.Step.Name}}</div>
+      {{if .Step.Note}}<div class="task-note">{{.Step.Note}}</div>{{end}}
+      {{if isReady .Step}}
+      <div class="task-actions">
+        <form method="POST" action="/instance/{{.InstanceID}}/step">
+          {{csrfField $cu}}
+          <input type="hidden" name="step" value="{{.Step.Name}}">
+          <button class="btn-task-complete" type="submit"
+            {{if requiredListBlocked .Step}}disabled title="Pflichtelemente zuerst abhaken"{{end}}>
+            ✓ Erledigt
+          </button>
+        </form>
+        {{if requiredListBlocked .Step}}<span class="task-blocked-hint">⚠ Pflichtelemente zuerst abhaken</span>{{end}}
+      </div>
+      {{end}}
+    </div>
+  </div>
+  {{end}}
+  {{end}}
+
+  {{if .Ready}}
+  <div class="task-section-label">Bereit</div>
+  {{range .Ready}}
+  {{$item := .}}
+  <div class="task-card{{if isGate .Step}} gate{{end}}{{if isAsk .Step}} ask{{end}}">
+    <div class="task-card-inner">
+      <div class="task-meta-top">
+        <a class="task-instance-link" href="/instance/{{.InstanceID}}">{{.InstanceTitle}}</a>
+        <span class="task-sep">·</span>
+        <span class="task-workflow">{{.WorkflowName}}</span>
+        <span class="task-sep">·</span>
+        <span class="task-section">{{.SectionName}}</span>
+        {{if isGate .Step}}<span class="task-status-tag gate-tag">Freigabe</span>{{end}}
+        {{if isAsk .Step}}<span class="task-status-tag ask-tag">Entscheidung</span>{{end}}
+      </div>
+      <div class="task-name">{{.Step.Name}}</div>
+      {{if .Step.Note}}<div class="task-note">{{.Step.Note}}</div>{{end}}
+
+      {{if isReady .Step}}
+      <div class="task-actions">
+        <form method="POST" action="/instance/{{.InstanceID}}/step">
+          {{csrfField $cu}}
+          <input type="hidden" name="step" value="{{.Step.Name}}">
+          <button class="btn-task-complete" type="submit"
+            {{if requiredListBlocked .Step}}disabled title="Pflichtelemente zuerst abhaken"{{end}}>
+            ✓ Erledigt
+          </button>
+        </form>
+        {{if requiredListBlocked .Step}}<span class="task-blocked-hint">⚠ Pflichtelemente zuerst abhaken</span>{{end}}
+      </div>
+      {{end}}
+
+      {{if isAsk .Step}}
+      <div class="task-actions">
+        <div class="task-ask-question">{{.Step.Ask.Question}}</div>
+        <div class="task-ask-btns">
+          {{range $i, $target := .Step.Ask.Targets}}
+          <form method="POST" action="/instance/{{$item.InstanceID}}/ask">
+            {{csrfField $cu}}
+            <input type="hidden" name="step" value="{{$item.Step.Name}}">
+            <input type="hidden" name="choice" value="{{$i}}">
+            <button class="btn-task-ask" type="submit">{{$target}}</button>
+          </form>
+          {{end}}
+        </div>
+      </div>
+      {{end}}
+
+      {{if isGate .Step}}
+      <div class="task-actions">
+        <a class="btn-task-gate" href="/approve/{{.Step.GateToken}}" target="_blank">🔑 Freigabe-Link öffnen</a>
+      </div>
+      {{end}}
+
+    </div>
+  </div>
+  {{end}}
+  {{end}}
+
+  {{end}}
+</div>
+</body>
+</html>
+{{end}}

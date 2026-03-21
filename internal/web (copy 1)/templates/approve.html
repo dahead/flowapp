@@ -1,0 +1,168 @@
+{{define "approve.html"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+{{template "head-base" .}}
+<title>Approval — FlowApp</title>
+<style>
+body {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+.ap-card {
+  background: var(--bg2);
+  border: 1.5px solid var(--border);
+  border-radius: 14px;
+  padding: 2rem 2.25rem;
+  width: 100%;
+  max-width: 440px;
+  box-shadow: var(--shadow);
+}
+.ap-logo {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: var(--text);
+  margin-bottom: 1.5rem;
+}
+.ap-logo span { color: var(--accent); }
+
+/* ── Active approval ── */
+.ap-meta {
+  font-size: 0.83rem;
+  color: var(--text3);
+  margin-bottom: 1.25rem;
+  line-height: 1.6;
+}
+.ap-meta strong { color: var(--text); font-weight: 600; }
+.ap-vars {
+  margin: .5rem 0 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: .1rem .75rem;
+  font-size: .85rem;
+  color: var(--text-muted);
+}
+.ap-vars dt { font-weight: 600; color: var(--text); white-space: nowrap; }
+.ap-vars dd { margin: 0; }
+.ap-step-name {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 0.35rem;
+}
+.ap-note {
+  font-size: 0.85rem;
+  color: var(--text3);
+  margin-bottom: 1.5rem;
+  line-height: 1.5;
+}
+.ap-question {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text2);
+  margin-bottom: 1rem;
+}
+.ap-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.ap-buttons button {
+  width: 100%;
+  padding: 0.65rem 1rem;
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg3);
+  color: var(--text);
+  font-size: 0.95rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.ap-buttons button:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.ap-buttons button.btn-0 {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.ap-buttons button.btn-0:hover { background: var(--accent2); border-color: var(--accent2); }
+
+/* ── Done / Error states ── */
+.ap-done {
+  text-align: center;
+  padding: 0.5rem 0;
+}
+.ap-done-icon {
+  font-size: 2.5rem;
+  margin-bottom: 0.75rem;
+}
+.ap-done-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 0.4rem;
+}
+.ap-done-sub {
+  font-size: 0.83rem;
+  color: var(--text3);
+}
+.ap-error {
+  background: #fee2e2;
+  color: #dc2626;
+  border-radius: 8px;
+  padding: 0.7rem 0.9rem;
+  font-size: 0.88rem;
+}
+[data-theme="dark"] .ap-error { background: #2a1010; color: #f87171; }
+</style>
+</head>
+<body>
+<div class="ap-card">
+  <div class="ap-logo">Flow<span>App</span></div>
+
+  {{if .Error}}
+  <div class="ap-error">⚠ {{.Error}}</div>
+
+  {{else if .Done}}
+  <div class="ap-done">
+    <div class="ap-done-icon">✓</div>
+    <div class="ap-done-title">Antwort gespeichert</div>
+    {{if .Step}}
+    <div class="ap-done-sub">{{.Step.Name}} → {{index .Step.Ask.Targets .Step.ChosenIdx}}</div>
+    {{end}}
+  </div>
+
+  {{else}}
+  {{if .Instance}}
+  <div class="ap-meta">
+    <strong>{{.Instance.Title}}</strong><br>
+    {{.Instance.WorkflowName}}
+    {{if .Instance.Vars}}
+    <dl class="ap-vars">
+      {{range $k, $v := .Instance.Vars}}<dt>{{$k}}</dt><dd>{{$v}}</dd>{{end}}
+    </dl>
+    {{end}}
+  </div>
+  {{end}}
+  <div class="ap-step-name">{{.Step.Name}}</div>
+  {{if .Step.Note}}<div class="ap-note">{{.Step.Note}}</div>{{end}}
+  <div class="ap-question">{{.Step.Ask.Question}}</div>
+  <form method="POST" action="/approve/{{.Token}}" class="ap-buttons">
+    {{range $i, $target := .Step.Ask.Targets}}
+    <button type="submit" name="choice" value="{{$i}}" class="btn-{{$i}}">{{$target}}</button>
+    {{end}}
+  </form>
+  {{end}}
+</div>
+</body>
+</html>
+{{end}}

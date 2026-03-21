@@ -13,6 +13,7 @@
         </div>
       </div>
       <div class="user-menu-sep"></div>
+      <a class="user-menu-item{{if isPage .Page "tasks"}} active{{end}}" href="/tasks">☑ Meine Aufgaben</a>
       <a class="user-menu-item" href="/builder">⚙ Builder</a>
       <a class="user-menu-item" href="/archive">📦 Archive</a>
       <a class="user-menu-item{{if isPage .Page "notifications"}} active{{end}}" href="/notifications">

@@ -225,7 +225,7 @@ func (h *Handler) requireWrite(next http.HandlerFunc) http.HandlerFunc {
 	return h.requireAuth(func(w http.ResponseWriter, r *http.Request) {
 		u := h.currentUser(r)
 		if !u.CanCreateInstance() {
-			h.renderError(w, r, "Keine Berechtigung für diese Aktion.", http.StatusForbidden)
+			h.renderError(w, r, "You do not have permission for this action.", http.StatusForbidden)
 			return
 		}
 		next(w, r)
@@ -237,7 +237,7 @@ func (h *Handler) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
 	return h.requireAuth(func(w http.ResponseWriter, r *http.Request) {
 		u := h.currentUser(r)
 		if !u.CanAdmin() {
-			h.renderError(w, r, "Nur Admins können diese Seite aufrufen.", http.StatusForbidden)
+			h.renderError(w, r, "Only admins can access this page.", http.StatusForbidden)
 			return
 		}
 		next(w, r)
@@ -282,6 +282,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /notifications/mark", h.requireAuth(h.requireCSRF(h.notificationsMark)))
 	// main app (auth required)
 	mux.HandleFunc("GET /", h.requireAuth(h.board))
+	mux.HandleFunc("GET /tasks", h.requireAuth(h.tasksPage))
 	mux.HandleFunc("GET /workflows", h.requireAuth(h.workflowsPage))
 	mux.HandleFunc("GET /builder", h.requireAuth(h.builder))
 	mux.HandleFunc("GET /archive", h.requireAuth(h.archive))
@@ -303,7 +304,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	// static assets
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.Dir("internal/web/static"))))
 	// public API
-	mux.HandleFunc("GET /api/workflows", h.apiWorkflows)
+	mux.HandleFunc("GET /api/workflows", h.requireAuth(h.apiWorkflows))
 	// gate approval — no login required; token is the credential; POST-only for submission
 	mux.HandleFunc("GET /approve/{token}", h.approvalPage)
 	mux.HandleFunc("POST /approve/{token}", h.approvalSubmit)
@@ -344,15 +345,15 @@ func (h *Handler) setupSubmit(w http.ResponseWriter, r *http.Request) {
 	password := r.FormValue("password")
 	confirm := r.FormValue("confirm")
 	if email == "" || name == "" || password == "" {
-		h.render(w, r, "setup.html", map[string]string{"Error": "Alle Felder ausfüllen."})
+		h.render(w, r, "setup.html", map[string]string{"Error": "Please fill in all fields."})
 		return
 	}
 	if password != confirm {
-		h.render(w, r, "setup.html", map[string]string{"Error": "Passwörter stimmen nicht überein."})
+		h.render(w, r, "setup.html", map[string]string{"Error": "Passwords do not match."})
 		return
 	}
 	if len(password) < 8 {
-		h.render(w, r, "setup.html", map[string]string{"Error": "Passwort muss mindestens 8 Zeichen haben."})
+		h.render(w, r, "setup.html", map[string]string{"Error": "Password must be at least 8 characters."})
 		return
 	}
 	u, err := h.users.Create(email, name, password, auth.RoleAdmin)
@@ -387,13 +388,13 @@ func (h *Handler) loginSubmit(w http.ResponseWriter, r *http.Request) {
 	email := strings.TrimSpace(r.FormValue("email"))
 	password := r.FormValue("password")
 	next := r.FormValue("next")
-	if next == "" {
+	if next == "" || !strings.HasPrefix(next, "/") {
 		next = "/"
 	}
 	if ok, wait := h.loginRL.Allow(r); !ok {
 		mins := int(wait.Minutes()) + 1
 		h.render(w, r, "login.html", map[string]string{
-			"Error": fmt.Sprintf("Zu viele Fehlversuche. Bitte %d Minuten warten.", mins),
+			"Error": fmt.Sprintf("Too many failed attempts. Please wait %d minutes.", mins),
 			"Next":  next,
 		})
 		return
@@ -401,7 +402,7 @@ func (h *Handler) loginSubmit(w http.ResponseWriter, r *http.Request) {
 	u, err := h.users.Authenticate(email, password)
 	if err != nil {
 		webLog.Warn("login failed for %s: %v", email, err)
-		h.render(w, r, "login.html", map[string]string{"Error": "Ungültige E-Mail oder Passwort.", "Next": next})
+		h.render(w, r, "login.html", map[string]string{"Error": "Invalid e-mail or password.", "Next": next})
 		return
 	}
 	webLog.Info("login successful for %s (%s)", u.ID, email)
@@ -545,6 +546,25 @@ type notificationsData struct {
 	Page          string
 }
 
+// taskItem represents a single actionable step for the current user, across all instances.
+type taskItem struct {
+	InstanceID    string
+	InstanceTitle string
+	WorkflowName  string
+	SectionName   string
+	Step          *engine.StepState
+	IsOverdue     bool
+}
+
+// tasksData is the view model for the /tasks page.
+type tasksData struct {
+	Overdue     []taskItem
+	Ready       []taskItem
+	CurrentUser *auth.User
+	Page        string
+	UnreadCount int
+}
+
 func (h *Handler) board(w http.ResponseWriter, r *http.Request) {
 	u := h.currentUser(r)
 	q := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
@@ -679,7 +699,7 @@ func (h *Handler) newInstancePrompt(w http.ResponseWriter, r *http.Request) {
 	for _, d := range defs {
 		if d.Name == wfName {
 			if !userCanStartWorkflow(u, d) {
-				h.renderError(w, r, "Keine Berechtigung zum Starten dieses Workflows.", http.StatusForbidden)
+				h.renderError(w, r, "You do not have permission to start this workflow.", http.StatusForbidden)
 				return
 			}
 			if len(d.Vars) > 0 {
@@ -688,12 +708,8 @@ func (h *Handler) newInstancePrompt(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	// no vars — create directly without showing the prompt page
-	if _, err := h.store.CreateInstance(wfName, title, u.ID); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	// no vars — redirect to POST handler to keep GET side-effect-free
+	http.Redirect(w, r, "/workflows", http.StatusSeeOther)
 }
 
 // archive renders the archive page with optional text search filtering.
@@ -744,7 +760,7 @@ func (h *Handler) instanceDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	u := h.currentUser(r)
 	if !userCanViewInstance(u, inst) {
-		h.renderError(w, r, "Keine Berechtigung für diese Instanz.", http.StatusForbidden)
+		h.renderError(w, r, "You do not have permission for this instance.", http.StatusForbidden)
 		return
 	}
 	all := h.store.Instances()
@@ -781,7 +797,7 @@ func (h *Handler) createInstance(w http.ResponseWriter, r *http.Request) {
 	u := h.currentUser(r)
 	for _, d := range h.store.Definitions() {
 		if d.Name == wfName && !userCanStartWorkflow(u, d) {
-			h.renderError(w, r, "Keine Berechtigung zum Starten dieses Workflows.", http.StatusForbidden)
+			h.renderError(w, r, "You do not have permission to start this workflow.", http.StatusForbidden)
 			return
 		}
 	}
@@ -806,6 +822,10 @@ func (h *Handler) createInstance(w http.ResponseWriter, r *http.Request) {
 // editInstance handles the POST form that updates an instance's title, priority, and labels.
 func (h *Handler) editInstance(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if inst, ok := h.store.Instance(id); ok && inst.Archived {
+		http.Error(w, "Cannot edit archived instance.", http.StatusForbidden)
+		return
+	}
 	r.ParseForm()
 	if err := h.store.UpdateInstance(id, strings.TrimSpace(r.FormValue("title")),
 		r.FormValue("priority"), r.FormValue("labels")); err != nil {
@@ -824,13 +844,18 @@ func (h *Handler) advanceStep(w http.ResponseWriter, r *http.Request) {
 	u := h.currentUser(r)
 	if inst, ok := h.store.Instance(id); ok {
 		if s := inst.StepByName(stepName); s != nil && !userCanDoStep(u, s) {
-			flashError(w, r, "Keine Berechtigung für diesen Schritt.")
+			flashError(w, r, "You do not have permission for this step.")
 			http.Redirect(w, r, "/instance/"+id, http.StatusSeeOther)
 			return
 		}
 	}
 	if err := h.store.AdvanceStep(id, stepName); err != nil {
 		flashError(w, r, err.Error())
+		return
+	}
+	// redirect back to /tasks if the action was triggered from there
+	if strings.HasSuffix(r.Header.Get("Referer"), "/tasks") {
+		http.Redirect(w, r, "/tasks", http.StatusSeeOther)
 		return
 	}
 	http.Redirect(w, r, "/instance/"+id, http.StatusSeeOther)
@@ -844,7 +869,7 @@ func (h *Handler) answerAsk(w http.ResponseWriter, r *http.Request) {
 	u := h.currentUser(r)
 	if inst, ok := h.store.Instance(id); ok {
 		if s := inst.StepByName(stepName); s != nil && !userCanDoStep(u, s) {
-			flashError(w, r, "Keine Berechtigung für diesen Schritt.")
+			flashError(w, r, "You do not have permission for this step.")
 			http.Redirect(w, r, "/instance/"+id, http.StatusSeeOther)
 			return
 		}
@@ -852,6 +877,11 @@ func (h *Handler) answerAsk(w http.ResponseWriter, r *http.Request) {
 	idx, _ := strconv.Atoi(r.FormValue("choice"))
 	if err := h.store.AnswerAsk(id, stepName, idx); err != nil {
 		flashError(w, r, err.Error())
+		return
+	}
+	// redirect back to /tasks if the action was triggered from there
+	if strings.HasSuffix(r.Header.Get("Referer"), "/tasks") {
+		http.Redirect(w, r, "/tasks", http.StatusSeeOther)
 		return
 	}
 	http.Redirect(w, r, "/instance/"+id, http.StatusSeeOther)
@@ -862,10 +892,15 @@ func (h *Handler) answerAsk(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) cloneInstance(w http.ResponseWriter, r *http.Request) {
 	u := h.currentUser(r)
 	if u == nil || !u.CanCloneInstance() {
-		h.renderError(w, r, "Keine Berechtigung zum Klonen von Instanzen.", http.StatusForbidden)
+		h.renderError(w, r, "You do not have permission to clone instances.", http.StatusForbidden)
 		return
 	}
-	inst, err := h.store.CloneInstance(r.PathValue("id"))
+	id := r.PathValue("id")
+	if existing, ok := h.store.Instance(id); !ok || !userCanViewInstance(u, existing) {
+		h.renderError(w, r, "You do not have permission for this instance.", http.StatusForbidden)
+		return
+	}
+	inst, err := h.store.CloneInstance(id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -891,10 +926,15 @@ func (h *Handler) addComment(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) deleteInstance(w http.ResponseWriter, r *http.Request) {
 	u := h.currentUser(r)
 	if u == nil || !u.CanDeleteInstance() {
-		h.renderError(w, r, "Keine Berechtigung zum Löschen von Instanzen.", http.StatusForbidden)
+		h.renderError(w, r, "You do not have permission to delete instances.", http.StatusForbidden)
 		return
 	}
-	h.store.DeleteInstance(r.PathValue("id"))
+	id := r.PathValue("id")
+	if inst, ok := h.store.Instance(id); !ok || !userCanViewInstance(u, inst) {
+		h.renderError(w, r, "You do not have permission for this instance.", http.StatusForbidden)
+		return
+	}
+	h.store.DeleteInstance(id)
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
@@ -943,7 +983,13 @@ func (h *Handler) checkAllListItems(w http.ResponseWriter, r *http.Request) {
 // reorder updates the drag-and-drop position of instances on the board.
 func (h *Handler) reorder(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
-	ids := r.Form["ids[]"]
+	u := h.currentUser(r)
+	var ids []string
+	for _, id := range r.Form["ids[]"] {
+		if inst, ok := h.store.Instance(id); ok && userCanViewInstance(u, inst) {
+			ids = append(ids, id)
+		}
+	}
 	if err := h.store.ReorderInstances(ids); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -998,7 +1044,7 @@ func (h *Handler) approvalPage(w http.ResponseWriter, r *http.Request) {
 	token := r.PathValue("token")
 	inst, step := h.store.FindByToken(token)
 	if inst == nil || step == nil {
-		h.render(w, r, "approve.html", approvalData{Token: token, Error: "Link nicht gefunden oder bereits verwendet."})
+		h.render(w, r, "approve.html", approvalData{Token: token, Error: "Link not found or already used."})
 		return
 	}
 	if step.GateUsed {
@@ -1069,6 +1115,11 @@ func (h *Handler) adminCreateUser(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) adminEditUser(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	id := r.PathValue("id")
+	if cu := h.currentUser(r); cu != nil && cu.ID == id {
+		flashError(w, r, "You cannot edit your own account here.")
+		http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
+		return
+	}
 	active := r.FormValue("active") == "1"
 	// parse comma-separated app_roles from a hidden form input
 	var appRoles []string
@@ -1091,7 +1142,7 @@ func (h *Handler) adminDeleteUser(w http.ResponseWriter, r *http.Request) {
 	cu := h.currentUser(r)
 	id := r.PathValue("id")
 	if cu != nil && cu.ID == id {
-		flashError(w, r, "Du kannst deinen eigenen Account nicht löschen.")
+		flashError(w, r, "You cannot delete your own account.")
 		http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
 		return
 	}
@@ -1105,7 +1156,7 @@ func (h *Handler) adminResetPassword(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	pw := r.FormValue("password")
 	if len(pw) < 8 {
-		flashError(w, r, "Passwort muss mindestens 8 Zeichen haben.")
+		flashError(w, r, "Password must be at least 8 characters.")
 		http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
 		return
 	}
@@ -1245,6 +1296,55 @@ func (h *Handler) notificationsMark(w http.ResponseWriter, r *http.Request) {
 		h.notifStore.MarkAllRead(u.ID)
 	}
 	http.Redirect(w, r, "/notifications", http.StatusSeeOther)
+}
+
+// tasksPage renders a flat list of all actionable steps assigned to the current user,
+// grouped into overdue and ready buckets across all instances.
+func (h *Handler) tasksPage(w http.ResponseWriter, r *http.Request) {
+	u := h.currentUser(r)
+	instances := h.store.Instances()
+
+	var overdue, ready []taskItem
+	for _, inst := range instances {
+		if string(inst.Status) == "done" || inst.Archived {
+			continue
+		}
+		if !userCanViewInstance(u, inst) {
+			continue
+		}
+		for _, sec := range inst.Sections {
+			for _, s := range sec.Steps {
+				// only actionable statuses
+				if s.Status != engine.StatusReady && s.Status != engine.StatusAsk && s.Status != engine.StatusGate {
+					continue
+				}
+				if !userCanDoStep(u, s) {
+					continue
+				}
+				item := taskItem{
+					InstanceID:    inst.ID,
+					InstanceTitle: inst.Title,
+					WorkflowName:  inst.WorkflowName,
+					SectionName:   sec.Name,
+					Step:          s,
+					IsOverdue:     s.IsOverdue(),
+				}
+				if item.IsOverdue {
+					overdue = append(overdue, item)
+				} else {
+					ready = append(ready, item)
+				}
+			}
+		}
+	}
+
+	h.render(w, r, "tasks.html", tasksData{
+		Overdue:     overdue,
+		Ready:       ready,
+		CurrentUser: u,
+		Page:        "tasks",
+		UnreadCount: h.unreadCount(u),
+	})
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -1517,14 +1617,14 @@ func (h *Handler) profileSave(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	name := strings.TrimSpace(r.FormValue("name"))
 	if name == "" {
-		flashError(w, r, "Name darf nicht leer sein.")
+		flashError(w, r, "Name must not be empty.")
 		http.Redirect(w, r, "/profile", http.StatusSeeOther)
 		return
 	}
 	pw := r.FormValue("password")
 	if pw != "" {
 		if len(pw) < 8 {
-			flashError(w, r, "Passwort muss mindestens 8 Zeichen haben.")
+			flashError(w, r, "Password must be at least 8 characters.")
 			http.Redirect(w, r, "/profile", http.StatusSeeOther)
 			return
 		}

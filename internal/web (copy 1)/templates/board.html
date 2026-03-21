@@ -1,0 +1,526 @@
+{{define "board.html"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+{{template "head-base" .}}
+<title>FlowApp</title>
+<link rel="stylesheet" href="/static/board.css">
+</head>
+<body>
+<header>
+  <h1>Flow<span>App</span></h1>
+  {{if canCreateInstance .CurrentUser}}
+  <a class="btn-new-instance" href="/workflows">+ Neue Instanz</a>
+  {{end}}
+  {{template "menu-user" .}}
+</header>
+
+<div class="filter-bar" id="filterBar">
+  <!-- Search -->
+  <input type="text" class="filter-search" id="searchInput" placeholder="🔍 Search…"
+    value="{{.FilterQ}}">
+
+  <div class="filter-sep"></div>
+
+  <!-- Priority chips -->
+  <div class="filter-group">
+    <span class="filter-label">Priority</span>
+    {{range $p := (iterate 3)}}
+      {{$priority := index (slice "high" "medium" "low") $p}}
+      <a class="chip priority-{{$priority}}{{if hasPriority $ $priority}} active{{end}}"
+         onclick="toggleFilter('priority','{{$priority}}');return false;" href="#">
+        {{$priority}}{{if hasPriority $ $priority}}<span class="chip-x" onclick="removeFilter('priority','{{$priority}}');return false;">✕</span>{{end}}
+      </a>
+    {{end}}
+  </div>
+
+  <div class="filter-sep"></div>
+
+  <!-- Label chips -->
+  {{if .AllLabels}}
+  <div class="filter-group" style="flex-wrap:nowrap;">
+    <span class="filter-label" onclick="toggleLabelFilter()" style="cursor:pointer;user-select:none;white-space:nowrap;">Labels <span id="labelToggleIcon">▾</span></span>
+    <div id="labelChips" style="display:flex;flex-wrap:nowrap;gap:0.3rem;overflow:hidden;">
+    {{range .AllLabels}}
+    <a class="chip label-chip{{if hasLabel $ .}} active{{end}}"
+       onclick="toggleFilter('label','{{.}}');return false;" href="#">
+      {{.}}{{if hasLabel $ .}}<span class="chip-x" onclick="removeFilter('label','{{.}}');return false;">✕</span>{{end}}
+    </a>
+    {{end}}
+    </div>
+  </div>
+  <div class="filter-sep"></div>
+  {{end}}
+
+  <!-- Due filter -->
+  <div class="filter-group">
+    <span class="filter-label">Due</span>
+    {{range $d := (iterate 3)}}
+      {{$due := index (slice "overdue" "today" "7d") $d}}
+      <a class="chip due-chip{{if eq $.FilterDue $due}} active{{end}}"
+         onclick="setSingle('due','{{$due}}');return false;" href="#">
+        {{$due}}{{if eq $.FilterDue $due}}<span class="chip-x" onclick="setSingle('due','');return false;">✕</span>{{end}}
+      </a>
+    {{end}}
+  </div>
+
+  <div class="filter-sep"></div>
+
+  <!-- Created filter -->
+  <div class="filter-group">
+    <span class="filter-label">Created</span>
+    {{range $d := (iterate 3)}}
+      {{$cr := index (slice "today" "7d" "30d") $d}}
+      <a class="chip created-chip{{if eq $.FilterCreated $cr}} active{{end}}"
+         onclick="setSingle('created','{{$cr}}');return false;" href="#">
+        {{$cr}}{{if eq $.FilterCreated $cr}}<span class="chip-x" onclick="setSingle('created','');return false;">✕</span>{{end}}
+      </a>
+    {{end}}
+  </div>
+
+  <div class="filter-sep"></div>
+
+  <!-- Assign filter -->
+  <div class="filter-group">
+    <span class="filter-label">Assign</span>
+    <a class="chip assign-chip{{if eq $.FilterAssign "me"}} active{{end}}"
+       onclick="setSingle('assign','me');return false;" href="#">
+      👤 My Tasks{{if eq $.FilterAssign "me"}}<span class="chip-x" onclick="setSingle('assign','');return false;">✕</span>{{end}}
+    </a>
+  </div>
+
+  {{if hasActiveFilters $}}
+  <a href="/" class="filter-clear">✕ clear all</a>
+  {{end}}
+
+  <div class="filter-sep"></div>
+  <select id="sortSelect" class="filter-cli-btn" style="cursor:pointer;" onchange="setSingle('sort',this.value)">
+    <option value="position"{{if eq .FilterSort "position"}} selected{{end}}>↕ Position</option>
+    <option value="updated"{{if eq .FilterSort "updated"}} selected{{end}}>🕐 Last edited</option>
+    <option value="priority"{{if eq .FilterSort "priority"}} selected{{end}}>⚡ Priority</option>
+    <option value="created"{{if eq .FilterSort "created"}} selected{{end}}>📅 Created</option>
+  </select>
+  <button class="filter-cli-btn" id="cliBtnOpen" onclick="openCLI()">⌨ CLI</button>
+  <button class="filter-cli-btn" id="helpBtn" onclick="openHelp()" title="Keyboard shortcuts">?</button>
+  <button class="filter-cli-btn" id="filterHideBtn" onclick="hideFilterBar()" title="Hide filter bar (F to show)">✕ hide</button>
+</div>
+<button class="filter-bar-toggle" id="filterBarToggle" onclick="showFilterBar()" title="Show filter bar">⊞ filters <kbd>F</kbd></button>
+
+<!-- CLI overlay -->
+<div class="cli-overlay" id="cliOverlay" onclick="closeCLIIfOutside(event)">
+  <div class="cli-box">
+    <div class="cli-input-row">
+      <span class="cli-prompt">›</span>
+      <input class="cli-input" id="cliInput" placeholder="finance priority:high due:7d …" autocomplete="off"
+        oninput="cliUpdate()" onkeydown="cliKey(event)">
+    </div>
+    <div class="cli-hint">Labels, priority:high/medium/low, due:overdue/today/7d, created:today/7d/30d, assign:me, free text</div>
+    <div class="cli-suggestions" id="cliSuggestions"></div>
+  </div>
+</div>
+
+{{if .Flash}}<div class="flash-error">⚠ {{.Flash}}</div>{{end}}
+<div class="board">
+  {{range $col, $column := .Columns}}
+  <div class="column">
+    <div class="column-title" onclick="toggleCol({{$col}})" style="cursor:pointer;user-select:none;" title="Click to collapse/expand">
+      <span id="colArrow{{$col}}" style="font-size:0.65rem;margin-right:0.2rem;">▼</span>
+      {{$column.Title}} <span class="col-count">{{len $column.Cards}}</span>
+    </div>
+    <div id="colBody{{$col}}" class="col-body">
+    <div class="card-drop-zone" data-col="{{$col}}" data-before="__start__"></div>
+    {{range $column.Cards}}
+    <div class="card {{.Priority}}{{if .IsDone}} done-card{{end}}"
+         data-id="{{.ID}}" data-col="{{$col}}">
+      <div class="card-drag-handle" title="Drag to reorder">⠿</div>
+      <div class="card-title">{{.Title}}</div>
+      <div class="card-wf">{{.WorkflowName}}</div>
+      {{if .Labels}}
+      <div class="card-labels">
+        {{range .Labels}}<span class="card-label">{{.}}</span>{{end}}
+      </div>
+      {{end}}
+      <div class="progress-bar">
+        <div class="progress-fill{{if .IsDone}} done{{end}}" style="width:{{.Pct}}%"></div>
+      </div>
+      <div class="card-meta">
+        <span>{{.Done}}/{{.Total}}</span>
+        <span style="display:flex;align-items:center;gap:0.4rem;">
+          {{if .HasOverdue}}<span class="overdue-badge">overdue</span>{{end}}
+          <span class="priority-dot {{.Priority}}"></span>
+        </span>
+      </div>
+    </div>
+    <div class="card-drop-zone" data-col="{{$col}}" data-after="{{.ID}}"></div>
+    {{end}}
+  </div><!-- /col-body -->
+  </div>
+  {{end}}
+</div>
+
+<script>
+// ── Board Drag & Drop ──
+let dragging = null;
+let dropTarget = null;
+
+function initCards() {
+  document.querySelectorAll('.card[data-id]').forEach(card => {
+    card.addEventListener('mousedown', e => {
+      if (e.button !== 0) return;
+      if (!e.target.closest('.card-drag-handle')) return;
+      e.preventDefault();
+      const r = card.getBoundingClientRect();
+      const ghost = card.cloneNode(true);
+      ghost.id = 'cardGhost';
+      ghost.style.cssText = 'position:fixed;pointer-events:none;z-index:9999;width:'+r.width+'px;opacity:0.88;box-shadow:0 8px 24px rgba(0,0,0,0.25);transform:rotate(1.5deg);border-radius:12px;left:'+(e.clientX-r.width/2)+'px;top:'+(e.clientY-20)+'px;';
+      document.body.appendChild(ghost);
+      card.classList.add('dragging');
+      dragging = { cardEl: card, id: card.dataset.id, ghost };
+    });
+    card.addEventListener('click', e => {
+      if (dragging) return;
+      location = '/instance/' + card.dataset.id;
+    });
+  });
+}
+
+document.addEventListener('mousemove', e => {
+  if (!dragging) return;
+  const g = dragging.ghost;
+  const w = parseFloat(g.style.width);
+  g.style.left = (e.clientX - w/2) + 'px';
+  g.style.top  = (e.clientY - 20)  + 'px';
+  dropTarget = null;
+  document.querySelectorAll('.card-drop-zone').forEach(z => {
+    const r = z.getBoundingClientRect();
+    const hit = e.clientX >= r.left && e.clientX <= r.right
+             && e.clientY >= r.top - 14 && e.clientY <= r.bottom + 14;
+    z.classList.toggle('drag-over', hit);
+    if (hit) dropTarget = z;
+  });
+});
+
+document.addEventListener('mouseup', e => {
+  if (!dragging) return;
+  dragging.ghost.remove();
+  dragging.cardEl.classList.remove('dragging');
+  clearZones();
+  if (dropTarget) commitDrop(dropTarget);
+  dragging = null;
+  dropTarget = null;
+});
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && dragging) {
+    dragging.ghost.remove();
+    dragging.cardEl.classList.remove('dragging');
+    clearZones();
+    dragging = null; dropTarget = null;
+  }
+});
+
+function clearZones() {
+  document.querySelectorAll('.card-drop-zone.drag-over').forEach(z => z.classList.remove('drag-over'));
+}
+
+function commitDrop(zone) {
+  const col = zone.closest('.column');
+  const dragId = dragging.id;
+  const afterId = zone.dataset.after;
+  if (!afterId || afterId === '__start__') {
+    const firstZone = col.querySelector('.card-drop-zone');
+    firstZone.after(dragging.cardEl);
+  } else {
+    const afterCard = col.querySelector('.card[data-id="' + afterId + '"]');
+    if (afterCard) afterCard.after(dragging.cardEl);
+  }
+  const colCards = [...col.querySelectorAll('.card[data-id]')];
+  const colIds = colCards.map(c => c.dataset.id);
+  const thisSet = new Set(colIds);
+  const otherIds = [...document.querySelectorAll('.card[data-id]')]
+    .filter(c => !thisSet.has(c.dataset.id))
+    .map(c => c.dataset.id);
+  const allIds = [...colIds, ...otherIds];
+  fetch('/reorder', { method:'POST', body: new URLSearchParams(allIds.map(id => ['ids[]', id])) });
+}
+
+initCards();
+
+// ── Filter helpers ──
+function getParams() { return new URLSearchParams(window.location.search); }
+
+function applyFilter(key, val) {
+  const p = getParams();
+  if (val) p.set(key, val); else p.delete(key);
+  window.location = '/?' + p.toString();
+}
+
+function toggleFilter(key, val) {
+  const p = getParams();
+  const existing = p.getAll(key);
+  const next = existing.includes(val)
+    ? existing.filter(v => v !== val)
+    : [...existing, val];
+  p.delete(key);
+  next.forEach(v => p.append(key, v));
+  window.location = '/?' + p.toString();
+}
+
+function removeFilter(key, val) {
+  toggleFilter(key, val);
+}
+
+function setSingle(key, val) {
+  const p = getParams();
+  if (!val || p.get(key) === val) p.delete(key);
+  else p.set(key, val);
+  window.location = '/?' + p.toString();
+}
+
+// ── Label filter collapse ──
+function toggleLabelFilter() {
+  const chips = document.getElementById('labelChips');
+  const icon  = document.getElementById('labelToggleIcon');
+  const collapsed = chips.style.maxWidth === '0px';
+  chips.style.maxWidth  = collapsed ? '' : '0px';
+  chips.style.opacity   = collapsed ? '1' : '0';
+  chips.style.pointerEvents = collapsed ? '' : 'none';
+  icon.textContent = collapsed ? '▾' : '▸';
+  try { localStorage.setItem('labelFilterCollapsed', collapsed ? '0' : '1'); } catch(e) {}
+}
+(function() {
+  try {
+    if (localStorage.getItem('labelFilterCollapsed') === '1') {
+      const chips = document.getElementById('labelChips');
+      const icon  = document.getElementById('labelToggleIcon');
+      if (chips) { chips.style.maxWidth = '0px'; chips.style.opacity = '0'; chips.style.pointerEvents = 'none'; }
+      if (icon)  { icon.textContent = '▸'; }
+    }
+  } catch(e) {}
+})();
+
+// search
+let _searchTimer;
+document.getElementById('searchInput').addEventListener('input', function() {
+  clearTimeout(_searchTimer);
+  _searchTimer = setTimeout(() => applyFilter('q', this.value.trim()), 800);
+});
+document.getElementById('searchInput').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') { clearTimeout(_searchTimer); applyFilter('q', this.value.trim()); }
+  if (e.key === 'Escape') { clearTimeout(_searchTimer); this.value = ''; applyFilter('q', ''); }
+});
+
+// ── CLI ──
+const CLI_TOKENS = [
+  { token: 'priority:high',    desc: 'Filter by high priority' },
+  { token: 'priority:medium',  desc: 'Filter by medium priority' },
+  { token: 'priority:low',     desc: 'Filter by low priority' },
+  { token: 'due:overdue',      desc: 'Show overdue instances' },
+  { token: 'due:today',        desc: 'Due today' },
+  { token: 'due:7d',           desc: 'Due within 7 days' },
+  { token: 'created:today',    desc: 'Created today' },
+  { token: 'created:7d',       desc: 'Created in last 7 days' },
+  { token: 'created:30d',      desc: 'Created in last 30 days' },
+];
+
+const _labels = document.querySelectorAll('.chip.label-chip');
+_labels.forEach(c => {
+  const lbl = c.textContent.trim().replace(/✕/g,'').trim();
+  CLI_TOKENS.push({ token: lbl, desc: 'Label filter' });
+});
+
+let _cliSel = -1;
+
+function openCLI() {
+  document.getElementById('cliOverlay').classList.add('open');
+  document.getElementById('cliBtnOpen').classList.add('active');
+  setTimeout(() => document.getElementById('cliInput').focus(), 50);
+  cliUpdate();
+}
+
+function closeCLI() {
+  document.getElementById('cliOverlay').classList.remove('open');
+  document.getElementById('cliBtnOpen').classList.remove('active');
+  _cliSel = -1;
+}
+
+function closeCLIIfOutside(e) {
+  if (e.target === document.getElementById('cliOverlay')) closeCLI();
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeCLI();
+});
+
+function cliUpdate() {
+  const val = document.getElementById('cliInput').value;
+  const words = val.split(/\s+/);
+  const last = words[words.length - 1].toLowerCase();
+  const suggs = last.length === 0 ? CLI_TOKENS :
+    CLI_TOKENS.filter(t => t.token.toLowerCase().startsWith(last) && !words.slice(0,-1).includes(t.token));
+  _cliSel = -1;
+  const box = document.getElementById('cliSuggestions');
+  box.innerHTML = '';
+  suggs.slice(0, 8).forEach((s, i) => {
+    const div = document.createElement('div');
+    div.className = 'cli-suggestion';
+    div.innerHTML = `<span class="s-token">${s.token}</span><span class="s-desc">${s.desc}</span>`;
+    div.addEventListener('mousedown', e => { e.preventDefault(); insertToken(s.token); });
+    box.appendChild(div);
+  });
+}
+
+function cliKey(e) {
+  const suggs = document.querySelectorAll('.cli-suggestion');
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    _cliSel = Math.min(_cliSel + 1, suggs.length - 1);
+    suggs.forEach((s, i) => s.classList.toggle('selected', i === _cliSel));
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    _cliSel = Math.max(_cliSel - 1, -1);
+    suggs.forEach((s, i) => s.classList.toggle('selected', i === _cliSel));
+  } else if (e.key === 'Tab' || (e.key === 'Enter' && _cliSel >= 0)) {
+    e.preventDefault();
+    if (_cliSel >= 0 && suggs[_cliSel]) {
+      const token = suggs[_cliSel].querySelector('.s-token').textContent;
+      insertToken(token);
+    }
+  } else if (e.key === 'Enter' && _cliSel < 0) {
+    e.preventDefault();
+    applyCLI();
+  }
+}
+
+function insertToken(token) {
+  const inp = document.getElementById('cliInput');
+  const words = inp.value.split(/\s+/).filter(Boolean);
+  const last = words[words.length - 1] || '';
+  if (token.toLowerCase().startsWith(last.toLowerCase()) && last.length > 0) {
+    words[words.length - 1] = token;
+  } else {
+    words.push(token);
+  }
+  inp.value = words.join(' ') + ' ';
+  inp.focus();
+  cliUpdate();
+}
+
+function applyCLI() {
+  const val = document.getElementById('cliInput').value.trim();
+  const p = new URLSearchParams();
+  const words = val.split(/\s+/).filter(Boolean);
+  const free = [];
+  words.forEach(w => {
+    if (w.startsWith('priority:')) p.append('priority', w.split(':')[1]);
+    else if (w.startsWith('due:'))      p.set('due', w.split(':')[1]);
+    else if (w.startsWith('created:'))  p.set('created', w.split(':')[1]);
+    else if (w.includes(':'))           {}
+    else                                free.push(w);
+  });
+  const knownLabels = [...document.querySelectorAll('.chip.label-chip')]
+    .map(c => c.textContent.trim().replace(/✕/g,'').trim().toLowerCase());
+  free.forEach(w => {
+    if (knownLabels.includes(w.toLowerCase())) p.append('label', w.toLowerCase());
+    else p.set('q', (p.get('q') ? p.get('q') + ' ' : '') + w);
+  });
+  closeCLI();
+  window.location = '/?' + p.toString();
+}
+
+// ── Keyboard shortcuts ──
+document.addEventListener('keydown', function(e) {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+  if (e.key === '/') {
+    e.preventDefault();
+    const inp = document.getElementById('searchInput');
+    if (inp) { inp.focus(); inp.select(); }
+  }
+  if (e.key === '?' && !e.shiftKey) { openHelp(); }
+  if (e.key === 'Escape') { closeCLI && closeCLI(); closeHelp(); }
+  if (e.key === 'a' || e.key === 'A') location = '/archive';
+  if (e.key === 'f' || e.key === 'F') toggleFilterBar();
+});
+
+const _colCollapsed = {};
+
+function updateBoardGrid() {
+  const cols = document.querySelectorAll('.board > .column');
+  var template = '';
+  cols.forEach(function(col) {
+    template += col.classList.contains('collapsed') ? '40px ' : '1fr ';
+  });
+  document.querySelector('.board').style.gridTemplateColumns = template.trim();
+}
+
+function toggleCol(idx) {
+  const body   = document.getElementById('colBody'  + idx);
+  const arrow  = document.getElementById('colArrow' + idx);
+  const column = body ? body.closest('.column') : null;
+  if (!body || !column) return;
+  _colCollapsed[idx] = !_colCollapsed[idx];
+  body.classList.toggle('collapsed', _colCollapsed[idx]);
+  column.classList.toggle('collapsed', _colCollapsed[idx]);
+  arrow.textContent = _colCollapsed[idx] ? '▶' : '▼';
+  updateBoardGrid();
+  try { localStorage.setItem('colCollapsed', JSON.stringify(_colCollapsed)); } catch(e) {}
+}
+
+(function() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('colCollapsed') || '{}');
+    Object.keys(saved).forEach(function(k) {
+      if (saved[k]) {
+        const body  = document.getElementById('colBody'  + k);
+        const arrow = document.getElementById('colArrow' + k);
+        const col   = body ? body.closest('.column') : null;
+        if (body)  { body.classList.add('collapsed'); _colCollapsed[k] = true; }
+        if (arrow) { arrow.textContent = '▶'; }
+        if (col)   { col.classList.add('collapsed'); }
+      }
+    });
+    updateBoardGrid();
+  } catch(e) {}
+})();
+
+function openHelp()  { document.getElementById('helpOverlay').classList.add('open'); }
+function closeHelp() { document.getElementById('helpOverlay').classList.remove('open'); }
+
+// ── Filter bar hide/show ──
+function hideFilterBar() {
+  document.getElementById('filterBar').classList.add('hidden');
+  document.getElementById('filterBarToggle').classList.add('visible');
+  try { localStorage.setItem('filterBarHidden', '1'); } catch(e) {}
+}
+function showFilterBar() {
+  document.getElementById('filterBar').classList.remove('hidden');
+  document.getElementById('filterBarToggle').classList.remove('visible');
+  try { localStorage.removeItem('filterBarHidden'); } catch(e) {}
+}
+function toggleFilterBar() {
+  const bar = document.getElementById('filterBar');
+  if (bar.classList.contains('hidden')) showFilterBar(); else hideFilterBar();
+}
+(function() {
+  try { if (localStorage.getItem('filterBarHidden')) { hideFilterBar(); } } catch(e) {}
+})();
+</script>
+
+<div class="cli-overlay" id="helpOverlay" onclick="if(event.target===this)closeHelp()">
+  <div class="cli-box" style="max-width:320px;">
+    <div class="cli-input-row" style="border-bottom:1px solid var(--border2);">
+      <span style="font-weight:700;font-size:0.9rem;">Keyboard Shortcuts</span>
+      <button onclick="closeHelp()" style="margin-left:auto;background:none;border:none;color:var(--text3);cursor:pointer;font-size:1.1rem;">✕</button>
+    </div>
+    <div style="padding:0.75rem 1.1rem;display:flex;flex-direction:column;gap:0.4rem;">
+      <div style="display:flex;justify-content:space-between;font-size:0.85rem;"><span>Focus search</span><kbd>/</kbd></div>
+      <div style="display:flex;justify-content:space-between;font-size:0.85rem;"><span>New instance</span><kbd>N</kbd></div>
+      <div style="display:flex;justify-content:space-between;font-size:0.85rem;"><span>CLI search</span><kbd>⌨ CLI</kbd></div>
+      <div style="display:flex;justify-content:space-between;font-size:0.85rem;"><span>Toggle filter bar</span><kbd>F</kbd></div>
+      <div style="display:flex;justify-content:space-between;font-size:0.85rem;"><span>Close / Cancel</span><kbd>Esc</kbd></div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
+{{end}}

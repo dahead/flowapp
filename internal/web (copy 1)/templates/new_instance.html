@@ -1,0 +1,87 @@
+{{define "new_instance.html"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+{{template "head-base" .}}
+<title>Neue Instanz — FlowApp</title>
+<style>
+.ni-wrap {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1rem;
+}
+.ni-card {
+  background: var(--bg2);
+  border: 1.5px solid var(--border);
+  border-radius: 14px;
+  padding: 2rem 2.25rem;
+  width: 100%;
+  max-width: 420px;
+  box-shadow: var(--shadow);
+}
+.ni-back {
+  display: inline-block;
+  font-size: 0.82rem;
+  color: var(--text3);
+  text-decoration: none;
+  margin-bottom: 1.25rem;
+}
+.ni-back:hover { color: var(--accent); }
+.ni-title {
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: var(--text);
+  margin-bottom: 0.2rem;
+}
+.ni-title span { color: var(--accent); }
+.ni-sub {
+  font-size: 0.82rem;
+  color: var(--text3);
+  margin-bottom: 1.5rem;
+}
+.ni-divider { border: none; border-top: 1px solid var(--border); margin: 1.2rem 0; }
+.ni-actions { display: flex; gap: 0.75rem; justify-content: flex-end; margin-top: 1.5rem; }
+.ni-btn { padding: 0.45rem 1.2rem; border: none; border-radius: 7px; cursor: pointer; font-size: 0.88rem; font-weight: 600; font-family: inherit; }
+.ni-btn-primary { background: var(--accent); color: #fff; }
+.ni-btn-primary:hover { background: var(--accent2); }
+.ni-btn-cancel { background: var(--bg); border: 1px solid var(--border); color: var(--text3); text-decoration: none; display: inline-flex; align-items: center; }
+.ni-btn-cancel:hover { border-color: var(--accent); color: var(--accent); }
+.var-hint { font-size: 0.72rem; color: var(--text4); margin-top: 0.15rem; }
+</style>
+</head>
+<body>
+<div class="ni-wrap">
+  <div class="ni-card">
+    <a class="ni-back" href="/workflows">← Zurück zur Auswahl</a>
+    <div class="ni-title">{{.WorkflowName}}</div>
+    <div class="ni-sub">Details für die neue Instanz</div>
+    <form method="POST" action="/instance">
+      {{csrfField .CurrentUser}}
+      <input type="hidden" name="workflow" value="{{.WorkflowName}}">
+      <div class="field">
+        <label>Titel</label>
+        <input type="text" name="title" value="{{.Title}}" placeholder="Instanz-Titel…" autofocus>
+      </div>
+      {{if .Vars}}
+      <hr class="ni-divider">
+      {{range .Vars}}
+      <div class="field">
+        <label>{{.}}</label>
+        <input type="text" name="var_{{.}}" placeholder="{{.}}…">
+        <div class="var-hint">Wird als ${{.}} im Workflow verwendet</div>
+      </div>
+      {{end}}
+      {{end}}
+      <div class="ni-actions">
+        <a href="/workflows" class="ni-btn ni-btn-cancel">Abbrechen</a>
+        <button type="submit" class="ni-btn ni-btn-primary">Erstellen →</button>
+      </div>
+    </form>
+  </div>
+</div>
+</body>
+</html>
+{{end}}

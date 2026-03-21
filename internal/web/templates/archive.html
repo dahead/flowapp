@@ -1,58 +1,102 @@
 {{define "archive.html"}}
+
 <!DOCTYPE html>
+
 <html lang="en">
 <head>
-{{template "head-base" .}}
-<title>Archive — FlowApp</title>
-<link rel="stylesheet" href="/static/archive.css">
+  {{template "head-base" .}}
+  <title>Archive — FlowApp</title>
+  <link rel="stylesheet" href="/static/archive.css">
 </head>
+
 <body>
 <header>
   <a href="/">← Board</a>
-  <h2>Arch<span>ive</span></h2>
+  <h1>Arch<span>ive</span></h1>
   {{template "menu-user" .}}
 </header>
+
 <div class="content">
+
+  ```
+  <!-- Filter -->
   <div class="filter-bar">
-    <input type="text" class="filter-search" id="searchInput"
-      placeholder="🔍 Search archived workflows…"
-      value="{{.FilterQ}}">
+    <label for="searchInput" class="sr-only">Search archived workflows</label>
+    <input
+            type="text"
+            class="filter-search"
+            id="searchInput"
+            placeholder="Search archived workflows…"
+            value="{{.FilterQ}}"
+    >
     {{if .FilterQ}}
     <a href="/archive" class="chip-clear">✕ clear</a>
     {{end}}
   </div>
+
+  <!-- Content -->
   {{if eq (len .Instances) 0}}
   <div class="empty">No completed workflows yet.</div>
   {{else}}
   {{range .Instances}}
-  <div class="row" onclick="location='/instance/{{.ID}}'">
+  <a class="row" href="/instance/{{.ID}}">
     <div class="priority-dot {{.Priority}}"></div>
+
     <div style="flex:1;">
       <div class="row-title">{{.Title}}</div>
       <div class="row-wf">{{.WorkflowName}}</div>
     </div>
-    {{if eq (print .Status) "done"}}
+
+    {{if eq .Status "done"}}
     <span class="badge-done">✓ done</span>
     {{else}}
-    <span class="badge-done" style="background:#fef3c7;color:#92400e;">📦 archived</span>
+    <span class="badge-archived">📦 archived</span>
     {{end}}
-    <div class="row-date">{{.UpdatedAt.Format "02.01.2006 15:04"}}</div>
-  </div>
+
+    <div class="row-date">
+      {{.UpdatedAt.Format "02.01.2006 15:04"}}
+    </div>
+  </a>
   {{end}}
   {{end}}
+  ```
+
 </div>
+
 <script>
-var _st;
-document.getElementById('searchInput').addEventListener('input', function() {
-  clearTimeout(_st);
-  var v = this.value.trim();
-  _st = setTimeout(function() { location = '/archive' + (v ? '?q=' + encodeURIComponent(v) : ''); }, 600);
-});
-document.getElementById('searchInput').addEventListener('keydown', function(e) {
-  if (e.key === 'Enter') { clearTimeout(_st); location = '/archive' + (this.value.trim() ? '?q=' + encodeURIComponent(this.value.trim()) : ''); }
-  if (e.key === 'Escape') { clearTimeout(_st); this.value = ''; location = '/archive'; }
-});
+  let timeout;
+  const input = document.getElementById('searchInput');
+
+  if (input) {
+    input.addEventListener('input', function () {
+      clearTimeout(timeout);
+      const v = this.value.trim();
+
+      timeout = setTimeout(() => {
+        const url = new URL('/archive', window.location.origin);
+        if (v) url.searchParams.set('q', v);
+        window.location = url;
+      }, 600);
+    });
+
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') {
+        clearTimeout(timeout);
+        const v = this.value.trim();
+        const url = new URL('/archive', window.location.origin);
+        if (v) url.searchParams.set('q', v);
+        window.location = url;
+      }
+
+      if (e.key === 'Escape') {
+        clearTimeout(timeout);
+        this.value = '';
+        window.location = '/archive';
+      }
+    });
+  }
 </script>
+
 </body>
 </html>
 {{end}}

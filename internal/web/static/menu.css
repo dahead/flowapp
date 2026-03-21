@@ -1,0 +1,73 @@
+/* ── App header ── */
+
+.app-header {
+  background: var(--header-bg);
+  height: 48px;
+  padding: 0 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  position: sticky;
+  top: 0;
+  z-index: 200;
+}
+
+.header-logo {
+  font-size: 14px;
+  font-weight: 700;
+  color: #fff;
+  text-decoration: none;
+  letter-spacing: -0.01em;
+  flex-shrink: 0;
+}
+.header-logo span { color: var(--accent); }
+
+/* ── Nav links ── */
+
+.header-nav {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  gap: 0;
+}
+
+.nav-link {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 100%;
+  padding: 0 0.85rem;
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(255,255,255,0.55);
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+  transition: color 0.1s, border-color 0.1s;
+  white-space: nowrap;
+}
+.nav-link:hover  { color: rgba(255,255,255,0.9); }
+.nav-link.active { color: #fff; border-bottom-color: var(--accent); }
+
+.nav-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+/* ── Right side of header ── */
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+}
