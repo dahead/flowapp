@@ -18,7 +18,7 @@
 <div class="content">
   <!-- User list -->
   <div class="box">
-    <div class="box-header">{{len .Users}} Benutzer</div>
+    <div class="box-header">{{len .Users}} Users</div>
     {{range .Users}}
     <div class="user-row{{if not .Active}} inactive{{end}}">
       <div class="user-avatar">{{initial .Name}}</div>
@@ -47,8 +47,8 @@
                 {{csrfField .CurrentUser}}
         <div class="field"><label>Name</label><input type="text" name="name" required></div>
         <div class="field"><label>E-Mail</label><input type="email" name="email" required></div>
-        <div class="field"><label>Passwort</label><input type="password" name="password" placeholder="min. 8 Zeichen" required></div>
-        <div class="field"><label>Rolle</label>
+        <div class="field"><label>Password</label><input type="password" name="password" placeholder="min. 8 characters" required></div>
+        <div class="field"><label>Role</label>
           <select name="role">
             <option value="viewer">Viewer</option>
             <option value="user" selected>User</option>
@@ -56,7 +56,7 @@
             <option value="admin">Admin</option>
           </select>
         </div>
-        <button class="btn-primary" type="submit">Anlegen</button>
+        <button class="btn-primary" type="submit">Create</button>
       </form>
     </div>
   </div>
@@ -65,12 +65,12 @@
 <!-- Edit modal -->
 <div class="modal" id="editModal">
   <div class="modal-box">
-    <h3>Benutzer bearbeiten</h3>
+    <h3>Edit user</h3>
     <form method="POST" id="editForm">
                 {{csrfField .CurrentUser}}
       <div class="field"><label>Name</label><input type="text" name="name" id="editName" required></div>
       <div class="field"><label>E-Mail</label><input type="email" name="email" id="editEmail" required></div>
-      <div class="field"><label>Rolle</label>
+      <div class="field"><label>Role</label>
         <select name="role" id="editRole">
           <option value="viewer">Viewer</option>
           <option value="user">User</option>
@@ -79,17 +79,17 @@
         </select>
       </div>
       <div class="field">
-        <label>App-Rollen <small style="color:var(--text4);font-weight:normal">(z.B. hr, finance, manager)</small></label>
+        <label>App-Roles <small style="color:var(--text4);font-weight:normal">(eg. hr, finance, manager)</small></label>
         <div class="tag-input-wrap" id="editRoleTagsWrap">
           <div id="editRoleTags" class="tag-list"></div>
-          <input type="text" id="editRoleInput" placeholder="Rolle eingeben + Enter" autocomplete="off">
+          <input type="text" id="editRoleInput" placeholder="Enter role + Enter" autocomplete="off">
         </div>
         <input type="hidden" name="app_roles" id="editAppRoles">
       </div>
-      <div class="field"><label><input type="checkbox" name="active" value="1" id="editActive"> Aktiv</label></div>
+      <div class="field"><label><input type="checkbox" name="active" value="1" id="editActive"> active</label></div>
       <div class="modal-actions">
-        <button type="button" class="btn-sm" onclick="closeModals()">Abbrechen</button>
-        <button type="submit" class="btn-primary">Speichern</button>
+        <button type="button" class="btn-sm" onclick="closeModals()">Cancel</button>
+        <button type="submit" class="btn-primary">Save</button>
       </div>
     </form>
   </div>
@@ -98,10 +98,10 @@
 <!-- Password modal -->
 <div class="modal" id="pwModal">
   <div class="modal-box">
-    <h3>Passwort zurücksetzen: <span id="pwName"></span></h3>
+    <h3>Reset password: <span id="pwName"></span></h3>
     <form method="POST" id="pwForm">
                 {{csrfField .CurrentUser}}
-      <div class="field"><label>Neues Passwort</label><input type="password" name="password" id="pwInput" placeholder="min. 8 Zeichen" required></div>
+      <div class="field"><label>New password</label><input type="password" name="password" id="pwInput" placeholder="min. 8 characters" required></div>
       <div class="modal-actions">
         <button type="button" class="btn-sm" onclick="closeModals()">Abbrechen</button>
         <button type="submit" class="btn-primary">Setzen</button>
@@ -113,13 +113,13 @@
 <!-- Delete modal -->
 <div class="modal" id="delModal">
   <div class="modal-box">
-    <h3>Benutzer löschen?</h3>
-    <p style="font-size:0.9rem;color:var(--text2);margin-bottom:0.5rem;"><span id="delName"></span> wird unwiderruflich gelöscht.</p>
+    <h3>Delete user?</h3>
+    <p style="font-size:0.9rem;color:var(--text2);margin-bottom:0.5rem;"><span id="delName"></span> will be finally deleted.</p>
     <div class="modal-actions">
-      <button type="button" class="btn-sm" onclick="closeModals()">Abbrechen</button>
+      <button type="button" class="btn-sm" onclick="closeModals()">Cancel</button>
       <form method="POST" id="delForm" style="display:inline;">
                 {{csrfField .CurrentUser}}
-        <button type="submit" class="btn-sm danger">Löschen</button>
+        <button type="submit" class="btn-sm danger">Delete</button>
       </form>
     </div>
   </div>

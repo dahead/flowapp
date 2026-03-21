@@ -3,7 +3,7 @@
 <html lang="en">
 <head>
 {{template "head-base" .}}
-<title>Benachrichtigungen — FlowApp</title>
+<title>Notifications — FlowApp</title>
 <style>
 .notif-page { max-width: 760px; margin: 2rem auto; padding: 0 1rem; }
 .notif-toolbar {
@@ -87,20 +87,20 @@
 <div class="notif-page">
   <div class="notif-toolbar">
     <h2>
-      Benachrichtigungen
-      {{if gt .UnreadCount 0}}<span class="notif-badge">{{.UnreadCount}} ungelesen</span>{{end}}
+      Notifications
+      {{if gt .UnreadCount 0}}<span class="notif-badge">{{.UnreadCount}} unread</span>{{end}}
     </h2>
     {{if .Notifications}}
     <form method="POST" action="/notifications/mark">
       {{csrfField .CurrentUser}}
       <input type="hidden" name="action" value="all_read">
-      <button type="submit" class="notif-btn">✓ Alle als gelesen markieren</button>
+      <button type="submit" class="notif-btn">✓ Mark all as read</button>
     </form>
     {{end}}
   </div>
 
   {{if eq (len .Notifications) 0}}
-  <div class="notif-empty">🔔 Keine Benachrichtigungen vorhanden.</div>
+  <div class="notif-empty">🔔 No notifications found.</div>
   {{else}}
   <div class="notif-list">
     {{range .Notifications}}
@@ -109,7 +109,7 @@
       <div class="notif-body">
         <div class="notif-msg">{{.Message}}</div>
         {{if .GateURL}}
-        <a class="notif-gate-link" href="{{.GateURL}}" target="_blank">🔑 Approval-Link öffnen</a>
+        <a class="notif-gate-link" href="{{.GateURL}}" target="_blank">🔑 Open Approval-Link</a>
         {{end}}
         <div class="notif-meta">
           <span class="notif-kind">{{.Kind}}</span>
@@ -127,10 +127,10 @@
           <input type="hidden" name="id" value="{{.ID}}">
           {{if .Read}}
           <input type="hidden" name="action" value="unread">
-          <button type="submit" class="notif-btn" title="Als ungelesen markieren">○</button>
+          <button type="submit" class="notif-btn" title="Mark as unread">○</button>
           {{else}}
           <input type="hidden" name="action" value="read">
-          <button type="submit" class="notif-btn" title="Als gelesen markieren">✓</button>
+          <button type="submit" class="notif-btn" title="Mark as unread">✓</button>
           {{end}}
         </form>
       </div>

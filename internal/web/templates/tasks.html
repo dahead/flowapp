@@ -3,7 +3,7 @@
 <html lang="en">
 <head>
 {{template "head-base" .}}
-<title>Meine Aufgaben — FlowApp</title>
+<title>My Tasks — FlowApp</title>
 <link rel="stylesheet" href="/static/tasks.css">
 </head>
 <body>
@@ -19,7 +19,7 @@
   {{$total := add (len .Overdue) (len .Ready)}}
 
   <div class="tasks-header">
-    <h2>Meine Aufgaben
+    <h2>My Tasks
       {{if gt $total 0}}<span class="tasks-count">{{$total}}</span>{{end}}
     </h2>
     <span class="tasks-user">{{$cu.Name}}{{if $cu.AppRoles}} · {{join $cu.AppRoles ", "}}{{end}}</span>
@@ -28,12 +28,12 @@
   {{if eq $total 0}}
   <div class="empty-state">
     <div class="empty-icon">✓</div>
-    <div>Keine offenen Aufgaben.</div>
+    <div>No open tasks.</div>
   </div>
   {{else}}
 
   {{if .Overdue}}
-  <div class="task-section-label overdue-label">Überfällig</div>
+  <div class="task-section-label overdue-label">Overdue</div>
   {{range .Overdue}}
   <div class="task-card overdue">
     <div class="task-card-inner">
@@ -53,11 +53,11 @@
           {{csrfField $cu}}
           <input type="hidden" name="step" value="{{.Step.Name}}">
           <button class="btn-task-complete" type="submit"
-            {{if requiredListBlocked .Step}}disabled title="Pflichtelemente zuerst abhaken"{{end}}>
-            ✓ Erledigt
+            {{if requiredListBlocked .Step}}disabled title="check required items first"{{end}}>
+            ✓ Done
           </button>
         </form>
-        {{if requiredListBlocked .Step}}<span class="task-blocked-hint">⚠ Pflichtelemente zuerst abhaken</span>{{end}}
+        {{if requiredListBlocked .Step}}<span class="task-blocked-hint">⚠ check required items first</span>{{end}}
       </div>
       {{end}}
     </div>
@@ -66,7 +66,7 @@
   {{end}}
 
   {{if .Ready}}
-  <div class="task-section-label">Bereit</div>
+  <div class="task-section-label">Ready</div>
   {{range .Ready}}
   {{$item := .}}
   <div class="task-card{{if isGate .Step}} gate{{end}}{{if isAsk .Step}} ask{{end}}">
@@ -77,8 +77,8 @@
         <span class="task-workflow">{{.WorkflowName}}</span>
         <span class="task-sep">·</span>
         <span class="task-section">{{.SectionName}}</span>
-        {{if isGate .Step}}<span class="task-status-tag gate-tag">Freigabe</span>{{end}}
-        {{if isAsk .Step}}<span class="task-status-tag ask-tag">Entscheidung</span>{{end}}
+        {{if isGate .Step}}<span class="task-status-tag gate-tag">Gate</span>{{end}}
+        {{if isAsk .Step}}<span class="task-status-tag ask-tag">Ask</span>{{end}}
       </div>
       <div class="task-name">{{.Step.Name}}</div>
       {{if .Step.Note}}<div class="task-note">{{.Step.Note}}</div>{{end}}
@@ -89,11 +89,11 @@
           {{csrfField $cu}}
           <input type="hidden" name="step" value="{{.Step.Name}}">
           <button class="btn-task-complete" type="submit"
-            {{if requiredListBlocked .Step}}disabled title="Pflichtelemente zuerst abhaken"{{end}}>
+            {{if requiredListBlocked .Step}}disabled title="check required items first"{{end}}>
             ✓ Erledigt
           </button>
         </form>
-        {{if requiredListBlocked .Step}}<span class="task-blocked-hint">⚠ Pflichtelemente zuerst abhaken</span>{{end}}
+        {{if requiredListBlocked .Step}}<span class="task-blocked-hint">⚠ check required items first</span>{{end}}
       </div>
       {{end}}
 
@@ -115,7 +115,7 @@
 
       {{if isGate .Step}}
       <div class="task-actions">
-        <a class="btn-task-gate" href="/approve/{{.Step.GateToken}}" target="_blank">🔑 Freigabe-Link öffnen</a>
+        <a class="btn-task-gate" href="/approve/{{.Step.GateToken}}" target="_blank">🔑 Open gate token</a>
       </div>
       {{end}}
 

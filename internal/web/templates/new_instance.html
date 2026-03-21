@@ -3,7 +3,7 @@
 <html lang="en">
 <head>
 {{template "head-base" .}}
-<title>Neue Instanz — FlowApp</title>
+<title>New Instance — FlowApp</title>
 <style>
 .ni-wrap {
   min-height: 100vh;
@@ -55,9 +55,9 @@
 <body>
 <div class="ni-wrap">
   <div class="ni-card">
-    <a class="ni-back" href="/workflows">← Zurück zur Auswahl</a>
+    <a class="ni-back" href="/workflows">← Back to selection</a>
     <div class="ni-title">{{.WorkflowName}}</div>
-    <div class="ni-sub">Details für die neue Instanz</div>
+    <div class="ni-sub">Details for the new instance</div>
     <form method="POST" action="/instance">
       {{csrfField .CurrentUser}}
       <input type="hidden" name="workflow" value="{{.WorkflowName}}">
@@ -76,8 +76,8 @@
       {{end}}
       {{end}}
       <div class="ni-actions">
-        <a href="/workflows" class="ni-btn ni-btn-cancel">Abbrechen</a>
-        <button type="submit" class="ni-btn ni-btn-primary">Erstellen →</button>
+        <a href="/workflows" class="ni-btn ni-btn-cancel">Cancel</a>
+        <button type="submit" class="ni-btn ni-btn-primary">Create →</button>
       </div>
     </form>
   </div>

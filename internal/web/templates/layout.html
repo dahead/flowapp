@@ -18,15 +18,15 @@
   </div>
   <nav class="header-nav">
     <a class="nav-link{{if isPage .Page "board"}} active{{end}}" href="/">Board</a>
-    <a class="nav-link{{if isPage .Page "tasks"}} active{{end}}" href="/tasks">Aufgaben</a>
+    <a class="nav-link{{if isPage .Page "tasks"}} active{{end}}" href="/tasks">Tasks</a>
     <a class="nav-link{{if isPage .Page "notifications"}} active{{end}}" href="/notifications">
-      Benachrichtigungen
+      Notifications
       {{if gt .UnreadCount 0}}<span class="nav-badge">{{.UnreadCount}}</span>{{end}}
     </a>
   </nav>
   <div class="header-right">
     {{if canCreateInstance .CurrentUser}}
-    <a class="btn-new-instance" href="/workflows">+ Neu</a>
+    <a class="btn-new-instance" href="/workflows">+ New</a>
     {{end}}
     {{if .CurrentUser}}
     <div class="user-menu-wrap">
@@ -42,8 +42,8 @@
           </div>
         </div>
         <div class="user-menu-sep"></div>
-        <a class="user-menu-item" href="/profile">⚙ Einstellungen</a>
-        <a class="user-menu-item" href="/archive">📦 Archiv</a>
+        <a class="user-menu-item" href="/profile">⚙ Preferences</a>
+        <a class="user-menu-item" href="/archive">📦 Archive</a>
         {{if isAdmin .CurrentUser}}
         <div class="user-menu-sub">
           <div class="user-menu-sub-label">Admin</div>
